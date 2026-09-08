@@ -22,6 +22,10 @@
 #include "../../compat/netbsd/net/if_media.h"
 #include "../../compat/netbsd/net/if_ether.h"
 #include "../../compat/netbsd/sys/systm.h"
+#include "../../compat/netbsd/sys/mbuf.h"
+#include "../../compat/netbsd/sys/endian.h"
+
+#include "../port.h"
 
 #undef malloc
 #undef free
@@ -52,8 +56,42 @@ void *if_percpuq_create(struct ifnet *ifp) {
 	return ifp;
 }
 
+static wlan_eapol_rx_fn wlan_eapol_rx;
+static void *wlan_eapol_rx_arg;
+static wlan_data_rx_fn wlan_data_rx;
+static void *wlan_data_rx_arg;
+
+void wlan_port_set_eapol_rx(wlan_eapol_rx_fn fn, void *arg) {
+	wlan_eapol_rx = fn;
+	wlan_eapol_rx_arg = arg;
+}
+
+void wlan_port_set_data_rx(wlan_data_rx_fn fn, void *arg) {
+	wlan_data_rx = fn;
+	wlan_data_rx_arg = arg;
+}
+
 void if_percpuq_enqueue(void *pq, struct mbuf *m) {
+	const struct ether_header *eh;
+
 	(void) pq;
+
+	if (m == NULL) {
+		return;
+	}
+	eh = mtod(m, const struct ether_header *);
+
+	if (ntohs(eh->ether_type) == ETHERTYPE_PAE && wlan_eapol_rx != NULL) {
+		/* the payload follows the 14-byte ethernet header */
+		wlan_eapol_rx(eh->ether_shost, mtod(m, const uint8_t *) +
+		    sizeof(*eh), m->m_len - sizeof(*eh), wlan_eapol_rx_arg);
+		m_freem(m);
+		return;
+	}
+	if (wlan_data_rx != NULL) {
+		wlan_data_rx(mtod(m, const uint8_t *), m->m_len,
+		    wlan_data_rx_arg);
+	}
 	m_freem(m);
 }
 

@@ -116,6 +116,35 @@ struct wlan_port_ifops {
 };
 
 /* ------------------------------------------------------------------
+ * Frame delivery (presentation hooks)
+ *
+ * Data frames that pass the net80211 input path leave the library
+ * through these hooks. The presentation layer registers handlers for
+ * the frames it wants; without a handler frames are dropped as before.
+ * Both run in the USB worker context: the handlers must copy the frame
+ * and return without blocking.
+ */
+
+/* EAPOL (ethertype 0x888e) frames; buf points at the payload behind
+ * the 14-byte ethernet header, src is the ethernet source address. */
+typedef void (*wlan_eapol_rx_fn)(const uint8_t src[6],
+    const uint8_t *buf, size_t len, void *arg);
+
+/* Every other delivered frame, as a full ethernet frame. */
+typedef void (*wlan_data_rx_fn)(const uint8_t *frame, size_t len,
+    void *arg);
+
+void wlan_port_set_eapol_rx(wlan_eapol_rx_fn fn, void *arg);
+void wlan_port_set_data_rx(wlan_data_rx_fn fn, void *arg);
+
+/* Send a full ethernet frame out of the wlan interface (queued to the
+ * ifnet, encrypted/encapsulated by net80211). Returns len or -1. */
+int wlan_port_xmit(const uint8_t *frame, size_t len);
+
+/* The interface hardware address (after attach). */
+int wlan_port_get_hwaddr(uint8_t addr[6]);
+
+/* ------------------------------------------------------------------
  * Driver registry
  */
 
