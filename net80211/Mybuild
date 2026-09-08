@@ -1,0 +1,11 @@
+package ext_project.net80211
+
+module net80211_core {
+	source "noop.c"
+	@Cflags("-D_KERNEL")
+	@Cflags("-Wno-pointer-sign")
+	@Cflags("-include$(ROOT_DIR)/ext_project/port/port_config_bsd.h")
+	@IncludePath("$(ROOT_DIR)/ext_project/compat/netbsd")
+	@IncludePath("$(ROOT_DIR)/ext_project")
+	source "ieee80211.c", "ieee80211_proto.c", "ieee80211_node.c", "ieee80211_output.c", "ieee80211_input.c", "ieee80211_netbsd.c", "ieee80211_crypto.c", "ieee80211_crypto_none.c"
+}

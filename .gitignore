@@ -1,0 +1,5 @@
+*.o
+*.a
+*.d
+/build/
+ext_project/
