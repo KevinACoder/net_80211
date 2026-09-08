@@ -530,11 +530,24 @@ static usbd_status usbd_ctrl_xfer(struct usbd_device *dev,
 		memcpy(s_ctrl.buf, data, len);
 	}
 
-	ret = usbh_control_transfer(dev->hport, &s_ctrl.setup, s_ctrl.buf);
+	/* The device occasionally leaves ep0 unanswered for longer than
+	 * usbh's fixed 500 ms control timeout (observed on LED/calib reads
+	 * during scanning).  CherryUSB kills the timed-out URB, so a fresh
+	 * submission is safe; give it a few chances before failing. */
+	for (unsigned attempt = 0;; attempt++) {
+		ret = usbh_control_transfer(dev->hport, &s_ctrl.setup,
+		    s_ctrl.buf);
+		if (ret != -USB_ERR_TIMEOUT || attempt == 2) {
+			break;
+		}
+		usb_osal_msleep(10);
+	}
 	/* >= 0: actual length; < 0: cherryusb error code */
 	if (ret < 0) {
-		printf("[wlan] ctrl xfer failed: type=%02x req=%02x raw=%d\n",
-		    req->bmRequestType, req->bRequest, ret);
+		printf("[wlan] ctrl xfer failed: type=%02x req=%02x val=%04x "
+		    "len=%u raw=%d\n",
+		    req->bmRequestType, req->bRequest, UGETW(req->wValue),
+		    UGETW(req->wLength), ret);
 		mutex_exit(&s_ctrl_mtx);
 		return usbd_map_err(ret);
 	}

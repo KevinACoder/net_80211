@@ -1311,6 +1311,19 @@ int usbh_submit_urb(struct usbh_urb *urb)
     }
     return ret;
 errout_timeout:
+#ifdef CONFIG_USB_EHCI_DESC_DCACHE_ENABLE
+    if (urb->hcpriv != NULL) {
+        struct ehci_qtd_hw *qtd =
+            EHCI_ADDR2QTD(((struct ehci_qh_hw *)urb->hcpriv)->first_qtd);
+
+        while (qtd != NULL) {
+            usb_dcache_invalidate((uintptr_t)&qtd->hw, CONFIG_USB_EHCI_ALIGN_SIZE);
+            printf("[ehci] ctrl timeout: qtd token=%08x len=%u\r\n",
+                   qtd->hw.token, qtd->length);
+            qtd = EHCI_ADDR2QTD(qtd->hw.next_qtd);
+        }
+    }
+#endif
     urb->timeout = 0;
     usbh_kill_urb(urb);
     return ret;
