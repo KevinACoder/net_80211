@@ -17,20 +17,24 @@ compat/netbsd/   Shadow headers and minimal shims for the NetBSD kernel API
 port/
   port.h         The stable port interface (OSAL, USB bus, net attach, control,
                  and the wlan_chip_driver registry)
-  embox/         Embox port: NetBSD kernel-API shims (locks, mbuf, ifnet,
-                 firmware lookup), compiled as the net80211_embox_osal module
+  embox/         NetBSD kernel-API shims for embox (locks/threads, mbuf, ifnet,
+                 firmware lookup)
   cherryusb/     CherryUSB USB host stack (vendored) + embox OSAL + RK3568
-                 EHCI glue + the net80211-over-cherryusb port (wlan command)
+                 EHCI glue + the usbd_* shim
   lwip_cherryusb/  Reserved for a future port over lwIP + CherryUSB
-scripts/         Helper scripts (firmware array generation, build integration)
-docs/            Integration notes (see docs/embox-rk3568.md)
+scripts/         Helper scripts (firmware array generation)
 ```
+
+This repository holds the portable library only. Building it for a
+given OS is the integrator's job: the embox tree, for example, carries
+a third-party/net80211 external-project description that pulls this
+repository and compiles the ports above into its build.
 
 ## Adding an OS port
 
-Implement the surface described in `port/port.h` and `port/PORTING.md`
-against your OS, provide the presentation layer your stack expects
-(embox uses its netdev + cfg80211 API), and register your chip drivers.
+Implement the surface described in `port/port.h` against your OS,
+provide the presentation layer your stack expects, and register the
+chip drivers.
 
 ## Adding a chip driver
 
