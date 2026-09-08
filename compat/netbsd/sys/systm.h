@@ -54,4 +54,29 @@ int copyin(const void *, void *, size_t);
 int copyout(const void *, void *, size_t);
 int copystr(const void *, void *, size_t, size_t *);
 
+
+static inline void *explicit_memset(void *b, int c, size_t len) {
+    volatile uint8_t *p = b;
+    size_t i;
+    for (i = 0; i < len; i++) p[i] = (uint8_t)c;
+    return b;
+}
+static inline int consttime_memequal(const void *a, const void *b, size_t len) {
+    const volatile uint8_t *x = a, *y = b;
+    uint8_t diff = 0;
+    size_t i;
+    for (i = 0; i < len; i++) diff |= (uint8_t)(x[i] ^ y[i]);
+    return diff == 0;
+}
+
+/* only the imported crypto self-tests call this; no-op */
+static inline void
+hexdump(int (*print_fn)(const char *, ...) __attribute__((unused)),
+    const char *tag, const void *buf, int len)
+{
+	(void) tag;
+	(void) buf;
+	(void) len;
+}
+
 #endif /* _SYS_SYSTM_H_ */
