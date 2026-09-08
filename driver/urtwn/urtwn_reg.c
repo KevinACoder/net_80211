@@ -141,6 +141,49 @@ void wlan_urtwn_detach(void *priv) {
 	/* detach goes through urtwn_detach with the stored device shell */
 }
 
+int wlan_port_xmit(const uint8_t *frame, size_t len) {
+	struct urtwn_softc *sc = urtwn_reg_softc;
+	struct ifnet *ifp;
+	struct mbuf *m;
+	int err;
+
+	if (sc == NULL || frame == NULL || len < sizeof(struct ether_header) ||
+	    len > MCLBYTES) {
+		return -1;
+	}
+	ifp = &sc->sc_if;
+
+	MGETHDR(m, M_DONTWAIT, MT_DATA);
+	if (m == NULL) {
+		return -1;
+	}
+	m->m_len = m->m_pkthdr.len = (int) len;
+	memcpy(mtod(m, void *), frame, len);
+
+	IFQ_ENQUEUE(&ifp->if_snd, m, err);
+	if (err != 0) {
+		m_freem(m);
+		return -1;
+	}
+	if_start_lock(ifp);
+	return (int) len;
+}
+
+int wlan_port_get_hwaddr(uint8_t addr[6]) {
+	struct urtwn_softc *sc = urtwn_reg_softc;
+	struct ifnet *ifp;
+
+	if (sc == NULL) {
+		return -1;
+	}
+	ifp = &sc->sc_if;
+	if (ifp->if_sadl == NULL) {
+		return -1;
+	}
+	memcpy(addr, CLLADDR(ifp->if_sadl), 6);
+	return 0;
+}
+
 const struct wlan_chip_driver urtwn_driver = {
 	.name = "urtwn",
 	.bus = WLAN_BUS_USB,
