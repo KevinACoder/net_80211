@@ -1488,7 +1488,8 @@ void USBH_IRQHandler(uint8_t busid)
     if (usbsts & EHCI_USBSTS_IAA) {
         for (uint8_t index = 0; index < CONFIG_USB_EHCI_QH_NUM; index++) {
             struct ehci_qh_hw *qh = &ehci_qh_pool[bus->hcd.hcd_id][index];
-            if (qh->remove_in_iaad) {
+            if (qh->remove_in_iaad && qh->urb != NULL &&
+                qh->urb->hport != NULL) {
                 ehci_urb_waitup(bus, qh->urb);
             }
         }
