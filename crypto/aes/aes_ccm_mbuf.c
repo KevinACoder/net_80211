@@ -47,8 +47,8 @@ aes_ccm_enc_mbuf(struct aes_ccm *C, struct mbuf *m, size_t off, size_t len,
 
 	while (off >= m->m_len) {
 		KASSERT(m->m_next);
-		m = m->m_next;
 		off -= m->m_len;
+		m = m->m_next;
 	}
 
 	for (; len > 0; m = m->m_next, off = 0, len -= seglen) {
@@ -72,8 +72,8 @@ aes_ccm_dec_mbuf(struct aes_ccm *C, struct mbuf *m0, size_t off0, size_t len0,
 
 	while (off0 >= m0->m_len) {
 		KASSERT(m0->m_next);
-		m0 = m0->m_next;
 		off0 -= m0->m_len;
+		m0 = m0->m_next;
 	}
 
 	for (m = m0, off = off0, len = len0;

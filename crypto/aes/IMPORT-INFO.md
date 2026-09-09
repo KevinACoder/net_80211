@@ -10,8 +10,17 @@ Not imported on purpose:
                <crypto/aes/aes.h> dispatchers it would provide are bound
                to the default BearSSL implementation (aes_bear_impl) by
                port/aes_impl_compat.c instead.
-  aes_ct*.c    alternative implementation, unused here.
+
   files.aes arch/ selftests left to the NetBSD build.
 
 Import rules follow ../net80211/IMPORT-INFO.md: keep the files byte
 identical to the NetBSD tree and express port adaptations outside them.
+
+Local corrections (2026-09-09):
+
+- aes_ccm_mbuf.c: subtract the length of the segment being skipped before
+  advancing to the next mbuf. Unequal segment lengths otherwise underflow
+  the offset. tests/ccm.c covers every split of RFC 3610 vector 1 and rejects
+  a forged MIC without retaining unauthenticated plaintext.
+- aes_ct.c/aes_ct_enc.c/aes_ct_dec.c are included as dependencies of the
+  BearSSL implementation.

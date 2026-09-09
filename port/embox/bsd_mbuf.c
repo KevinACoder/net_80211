@@ -15,6 +15,7 @@
 
 #include <sys/mbuf.h>
 #include <stdio.h>
+#include <mem/sysmalloc.h>
 
 /* the BSD malloc/free macros must not intercept the embox calls */
 #undef malloc
@@ -29,7 +30,7 @@ struct mbuf *m_get_impl(int wait, int type, int pkthdr) {
 	if (wait == M_DONTWAIT) {
 		/* the embox heap blocks on exhaustion; same call either way */
 	}
-	m = malloc(sizeof(struct mbuf) + MCLBYTES);
+	m = sysmalloc(sizeof(struct mbuf) + MCLBYTES);
 	if (m == NULL) {
 		return NULL;
 	}
@@ -54,7 +55,7 @@ struct mbuf *m_getcl_impl(int wait, int type, int pkthdr) {
 }
 
 static void m_free_one(struct mbuf *m) {
-	free(m);
+	sysfree(m);
 }
 
 void m_free_impl(struct mbuf *m) {
@@ -106,19 +107,12 @@ void m_adj(struct mbuf *mp, int req_len) {
 		for (m = mp; m != NULL; m = m->m_next) {
 			count += m->m_len;
 		}
-		while (count > len && mp != NULL) {
-			count -= mp->m_len;
-			count = count < 0 ? 0 : count;
-			if (mp->m_next == NULL || count == len) {
-				break;
+		count = count > len ? count - len : 0;
+		for (m = mp; m != NULL; m = m->m_next) {
+			if (m->m_len > count) {
+				m->m_len = count;
 			}
-			mp = mp->m_next;
-		}
-		if (mp != NULL && count < len) {
-			mp->m_data += (len - count);
-			mp->m_len -= (len - count);
-		} else if (mp != NULL) {
-			mp->m_len = count;
+			count -= m->m_len;
 		}
 	}
 	/* keep the packet header length in sync */
@@ -133,41 +127,44 @@ void m_adj(struct mbuf *mp, int req_len) {
 }
 
 struct mbuf *m_pullup(struct mbuf *m, int len) {
-	struct mbuf *n;
+	struct mbuf *head, *next;
+	int total = 0;
 
 	if (m == NULL) {
+		return NULL;
+	}
+	if (len < 0 || len > MCLBYTES - MH_ALIGN) {
+		m_freem(m);
 		return NULL;
 	}
 	if (m->m_len >= len) {
 		return m;
 	}
-	if ((m->m_flags & M_PKTHDR) == 0 || len > MCLBYTES - MH_ALIGN) {
+	for (next = m; next != NULL; next = next->m_next) {
+		total += next->m_len;
+	}
+	if (total < len) {
 		m_freem(m);
 		return NULL;
 	}
-	/* the simplified model keeps everything in one cluster: move the
-	 * data to the head of the cluster and merge the chain */
-	n = m->m_next;
-	m->m_next = NULL;
-	while (n != NULL && m->m_len < len) {
-		int chunk = n->m_len;
-
-		if (m->m_data + m->m_len + chunk >
-			m->m_cluster + m->m_cluster_size) {
-			m_freem(n);
-			m_freem(m);
-			return NULL;
-		}
-		memcpy(m->m_data + m->m_len, n->m_data, chunk);
-		m->m_len += chunk;
-		n = n->m_next;
-	}
-	m->m_pkthdr.len = m->m_len;
-	if (m->m_len < len) {
+	head = m_get_impl(M_DONTWAIT, m->m_type, (m->m_flags & M_PKTHDR) != 0);
+	if (head == NULL) {
 		m_freem(m);
 		return NULL;
 	}
-	return m;
+	if (m->m_flags & M_PKTHDR) {
+		m_move_pkthdr(head, m);
+	}
+	m_copydata(m, 0, len, head->m_data);
+	head->m_len = len;
+	m_adj(m, len);
+	while (m != NULL && m->m_len == 0) {
+		next = m->m_next;
+		m_free_one(m);
+		m = next;
+	}
+	head->m_next = m;
+	return head;
 }
 
 void m_copydata(const struct mbuf *m, int off, size_t len, void *cp) {
@@ -224,7 +221,10 @@ int m_copyback(struct mbuf *m, int off, int len, const void *cp) {
 struct mbuf *m_prepend(struct mbuf *m, int len, int how) {
 	struct mbuf *n;
 
-	(void) how;
+	if (m == NULL || len < 0 || len > MCLBYTES - MH_ALIGN) {
+		m_freem(m);
+		return NULL;
+	}
 	if (m != NULL && M_LEADINGSPACE(m) >= len) {
 		m->m_data -= len;
 		m->m_len += len;
@@ -233,23 +233,17 @@ struct mbuf *m_prepend(struct mbuf *m, int len, int how) {
 		}
 		return m;
 	}
-	n = m_get_impl(M_DONTWAIT, m != NULL ? m->m_type : MT_DATA, 1);
+	n = m_get_impl(how, m->m_type, (m->m_flags & M_PKTHDR) != 0);
 	if (n == NULL) {
 		m_freem(m);
 		return NULL;
 	}
-	n->m_data += len; /* keep room; caller fills via mtod */
-	n->m_len = 0;
-	if (m != NULL) {
-		if (m->m_flags & M_PKTHDR) {
-			n->m_pkthdr.len = m->m_pkthdr.len;
-			n->m_flags |= M_PKTHDR;
-			m->m_flags &= ~M_PKTHDR;
-		}
-		n->m_next = m;
-	} else {
-		n->m_flags &= ~M_PKTHDR;
+	n->m_len = len;
+	if (m->m_flags & M_PKTHDR) {
+		m_move_pkthdr(n, m);
+		n->m_pkthdr.len += len;
 	}
+	n->m_next = m;
 	return n;
 }
 

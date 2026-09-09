@@ -25,6 +25,7 @@
 #include <stdio.h>
 
 #include <hal/ipl.h>
+#include <mem/sysmalloc.h>
 
 #include <usbh_core.h>
 #include <usb_osal.h>
@@ -98,6 +99,7 @@ struct usbd_pipe {
 	struct usbd_device *dev;
 	struct usb_endpoint_descriptor *cherry_ep; /* inside hport config */
 	usb_endpoint_descriptor_t ed;              /* NetBSD view */
+	uint8_t data_toggle;
 	SLIST_HEAD(, usbd_xfer) pending;
 };
 
@@ -329,7 +331,7 @@ int usbd_create_xfer(struct usbd_pipe *pipe, size_t size, unsigned int flags,
 	xfer->pipe = pipe;
 	xfer->flags = (uint16_t) flags;
 	if (size != 0) {
-		xfer->dma_buf = memalign(USBD_SHIM_ALIGN, size);
+		xfer->dma_buf = sysmemalign(USBD_SHIM_ALIGN, size);
 		if (xfer->dma_buf == NULL) {
 			wlan_kfree(xfer, M_USB);
 			return USBD_NOMEM;
@@ -398,7 +400,18 @@ static unsigned wlan_async_trace_seq;
  * worker; never touch the driver callback here */
 static void usbd_shim_urb_complete(void *arg, int nbytes_or_err) {
 	struct usbd_xfer *xfer = arg;
-	struct usbd_device *dev = xfer->pipe != NULL ? xfer->pipe->dev : NULL;
+	struct usbd_device *dev;
+
+	/* The async completion and the worker (which re-submits the xfer)
+	 * race on the same xfer.  Only accept the completion while the
+	 * transfer is still in flight; once the worker took it off the
+	 * pending list and re-armed it, a stale completion must not touch
+	 * it again. */
+	if (xfer == NULL || !xfer->in_flight || xfer->pipe == NULL) {
+		return;
+	}
+	dev = xfer->pipe->dev;
+	xfer->pipe->data_toggle = xfer->urb.data_toggle;
 
 	if (nbytes_or_err < 0) {
 		xfer->status = usbd_map_err(nbytes_or_err);
@@ -457,6 +470,7 @@ usbd_status usbd_transfer(struct usbd_xfer *xfer) {
 	shim_locks_init();
 
 	memset(&xfer->urb, 0, sizeof(xfer->urb));
+	xfer->urb.data_toggle = xfer->pipe->data_toggle;
 	usbh_bulk_urb_fill(&xfer->urb, hport, xfer->pipe->cherry_ep,
 		xfer->buffer, xfer->length,
 		0 /* timeout=0: asynchronous */, usbd_shim_urb_complete, xfer);

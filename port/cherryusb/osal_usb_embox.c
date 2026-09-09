@@ -31,6 +31,10 @@
 #include <kernel/time/sys_timer.h>
 #include <kernel/time/ktime.h>
 #include <kernel/time/time.h>
+#include <kernel/task.h>
+#include <kernel/task/kernel_task.h>
+#include <mem/sysmalloc.h>
+#include <util/err.h>
 
 #include <usb_osal.h>
 #include <usb_errno.h>
@@ -52,7 +56,7 @@ static void *usb_embox_thread_trampoline(void *p) {
 	struct usb_embox_thread_ctx ctx;
 
 	ctx = *(struct usb_embox_thread_ctx *) p;
-	free(p);
+	sysfree(p);
 	ctx.entry(ctx.arg);
 	return NULL;
 }
@@ -64,19 +68,21 @@ usb_osal_thread_t usb_osal_thread_create(const char *name, uint32_t stack_size,
 	int embox_prio;
 
 	(void) name;
-	ctx = malloc(sizeof(*ctx));
+	ctx = sysmalloc(sizeof(*ctx));
 	if (ctx == NULL) {
 		return NULL;
 	}
 	ctx->entry = entry;
 	ctx->arg = args;
 
-	t = thread_create_with_stack(THREAD_FLAG_DETACHED | THREAD_FLAG_SUSPENDED,
+	t = thread_create_with_stack(THREAD_FLAG_NOTASK | THREAD_FLAG_SUSPENDED,
 	    stack_size, usb_embox_thread_trampoline, ctx);
-	if (t == NULL) {
-		free(ctx);
+	if (ptr2err(t)) {
+		sysfree(ctx);
 		return NULL;
 	}
+	task_thread_register(task_kernel_task(), t);
+	thread_detach(t);
 
 	embox_prio = USB_EMBOX_PRIO_BASE - (int) prio * USB_EMBOX_PRIO_STEP;
 	if (embox_prio < 16) {
@@ -110,7 +116,7 @@ struct usb_embox_sem {
 usb_osal_sem_t usb_osal_sem_create(uint32_t initial_count) {
 	struct usb_embox_sem *s;
 
-	s = malloc(sizeof(*s));
+	s = sysmalloc(sizeof(*s));
 	if (s == NULL) {
 		return NULL;
 	}
@@ -123,7 +129,7 @@ usb_osal_sem_t usb_osal_sem_create(uint32_t initial_count) {
 usb_osal_sem_t usb_osal_sem_create_counting(uint32_t max_count) {
 	struct usb_embox_sem *s;
 
-	s = malloc(sizeof(*s));
+	s = sysmalloc(sizeof(*s));
 	if (s == NULL) {
 		return NULL;
 	}
@@ -133,7 +139,7 @@ usb_osal_sem_t usb_osal_sem_create_counting(uint32_t max_count) {
 }
 
 void usb_osal_sem_delete(usb_osal_sem_t sem) {
-	free(sem);
+	sysfree(sem);
 }
 
 int usb_osal_sem_take(usb_osal_sem_t sem, uint32_t timeout) {
@@ -177,7 +183,7 @@ void usb_osal_sem_reset(usb_osal_sem_t sem) {
 usb_osal_mutex_t usb_osal_mutex_create(void) {
 	struct mutex *m;
 
-	m = malloc(sizeof(*m));
+	m = sysmalloc(sizeof(*m));
 	if (m == NULL) {
 		return NULL;
 	}
@@ -186,7 +192,7 @@ usb_osal_mutex_t usb_osal_mutex_create(void) {
 }
 
 void usb_osal_mutex_delete(usb_osal_mutex_t mutex) {
-	free(mutex);
+	sysfree(mutex);
 }
 
 int usb_osal_mutex_take(usb_osal_mutex_t mutex) {
@@ -216,13 +222,13 @@ usb_osal_mq_t usb_osal_mq_create(uint32_t max_msgs) {
 	if (max_msgs == 0) {
 		return NULL;
 	}
-	mq = malloc(sizeof(*mq));
+	mq = sysmalloc(sizeof(*mq));
 	if (mq == NULL) {
 		return NULL;
 	}
-	mq->buf = malloc(max_msgs * sizeof(uintptr_t));
+	mq->buf = sysmalloc(max_msgs * sizeof(uintptr_t));
 	if (mq->buf == NULL) {
-		free(mq);
+		sysfree(mq);
 		return NULL;
 	}
 	mq->cap = max_msgs;
@@ -236,8 +242,8 @@ usb_osal_mq_t usb_osal_mq_create(uint32_t max_msgs) {
 void usb_osal_mq_delete(usb_osal_mq_t mq) {
 	struct usb_embox_mq *m = mq;
 
-	free(m->buf);
-	free(m);
+	sysfree(m->buf);
+	sysfree(m);
 }
 
 int usb_osal_mq_send(usb_osal_mq_t mq, uintptr_t addr) {
@@ -291,7 +297,7 @@ struct usb_osal_timer *usb_osal_timer_create(const char *name,
 	struct usb_osal_timer *t;
 
 	(void) name;
-	t = malloc(sizeof(*t));
+	t = sysmalloc(sizeof(*t));
 	if (t == NULL) {
 		return NULL;
 	}
@@ -301,7 +307,7 @@ struct usb_osal_timer *usb_osal_timer_create(const char *name,
 	t->timeout_ms = timeout_ms;
 	t->timer = sys_timer_alloc();
 	if (t->timer == NULL) {
-		free(t);
+		sysfree(t);
 		return NULL;
 	}
 	return t;
@@ -313,7 +319,7 @@ void usb_osal_timer_delete(struct usb_osal_timer *timer) {
 	}
 	sys_timer_stop(timer->timer);
 	sys_timer_free(timer->timer);
-	free(timer);
+	sysfree(timer);
 }
 
 void usb_osal_timer_start(struct usb_osal_timer *timer) {
@@ -342,9 +348,9 @@ void usb_osal_msleep(uint32_t delay) {
 }
 
 void *usb_osal_malloc(size_t size) {
-	return malloc(size);
+	return sysmalloc(size);
 }
 
 void usb_osal_free(void *ptr) {
-	free(ptr);
+	sysfree(ptr);
 }

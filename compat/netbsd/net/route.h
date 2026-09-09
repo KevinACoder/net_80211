@@ -27,7 +27,8 @@ struct if_announcemsghdr {
 };
 
 /* route(4) socket emitters: no routing socket on the ports */
-#define rt_ieee80211msg(ifp, what, data, len) ((void) (ifp))
+struct ifnet;
+void rt_ieee80211msg(struct ifnet *ifp, int what, const void *data, size_t len);
 #define rt_ifmsg(ifp) ((void) (ifp))
 #define rt_ifannouncemsg(ifp, what, which) ((void) (ifp))
 

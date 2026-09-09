@@ -15,11 +15,23 @@
 
 extern void wlan_urtwn_up(void);
 extern void wlan_urtwn_dump(void);
+extern void wlan_urtwn_scan_dump(void);
 extern void wlan_usbdi_trace_reset(void);
 extern void wlan_usbdi_trace_set(unsigned level);
+extern int aes_ccm_selftest(void);
 
 int main(int argc, char **argv) {
 	int wait_s = 10;
+
+	if (argc > 1 && strcmp(argv[1], "status") == 0) {
+		wlan_urtwn_dump();
+		return 0;
+	}
+	if (argc > 1 && strcmp(argv[1], "ccmtest") == 0) {
+		int ret = aes_ccm_selftest();
+		printf("AES-CCM RFC3610: %s\n", ret ? "FAIL" : "PASS");
+		return ret != 0;
+	}
 
 	if (argc > 1 && strcmp(argv[1], "scan") == 0) {
 		if (argc > 2) {
@@ -33,7 +45,7 @@ int main(int argc, char **argv) {
 		printf("scanning for %d s...\n", wait_s);
 		ksleep((unsigned) wait_s * 1000);
 		printf("scan results:\n");
-		wlan_urtwn_dump();
+		wlan_urtwn_scan_dump();
 		return 0;
 	}
 	if (argc > 1 && strcmp(argv[1], "trace") == 0) {
@@ -42,6 +54,6 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 
-	printf("usage: wlan scan [seconds] | wlan trace [0|1|2]\n");
+	printf("usage: wlan scan [seconds] | wlan status | wlan ccmtest | wlan trace [0|1|2]\n");
 	return 0;
 }

@@ -118,6 +118,52 @@ void wlan_urtwn_up(void) {
 	}
 }
 
+struct wlan_scan_request {
+	uint8_t ssid[IEEE80211_NWID_LEN];
+	uint8_t len;
+};
+
+static void wlan_scan_start(struct urtwn_softc *sc, void *arg) {
+	const struct wlan_scan_request *req = arg;
+	struct ieee80211com *ic = &sc->sc_ic;
+	struct urtwn_cmd_newstate cmd = { .state = IEEE80211_S_INIT, .arg = -1 };
+
+	ic->ic_roaming = IEEE80211_ROAMING_MANUAL;
+	/* Like SCAN_REQ, start from INIT so begin_scan resets the channel
+	 * bitmap even when the previous manual scan left the state at SCAN.
+	 * Run both transitions on the driver worker to preserve their order. */
+	urtwn_newstate_cb(sc, &cmd);
+	memcpy(ic->ic_des_essid, req->ssid, req->len);
+	ic->ic_des_esslen = req->len;
+	memcpy(ic->ic_chan_active, ic->ic_chan_avail, sizeof(ic->ic_chan_active));
+	cmd.state = IEEE80211_S_SCAN;
+	urtwn_newstate_cb(sc, &cmd);
+}
+
+int wlan_port_scan(const uint8_t *ssid, size_t len) {
+	struct urtwn_softc *sc = urtwn_reg_softc;
+	struct wlan_scan_request req = {0};
+
+	if (sc == NULL || sc->sc_dying || !(sc->sc_if.if_flags & IFF_RUNNING) ||
+	    len > sizeof(req.ssid) || (len != 0 && ssid == NULL)) {
+		return -1;
+	}
+	if (len != 0) {
+		memcpy(req.ssid, ssid, len);
+	}
+	req.len = len;
+	urtwn_do_async(sc, wlan_scan_start, &req, sizeof(req));
+	return 0;
+}
+
+static void wlan_dump_key(const char *name, const struct ieee80211_key *key) {
+	printf("%s cipher=%s flags=%x index=%u txpn=%llu rxpn=%llu\n",
+	    name, key->wk_cipher ? key->wk_cipher->ic_name : "none",
+	    key->wk_flags, key->wk_keyix,
+	    (unsigned long long)key->wk_keytsc,
+	    (unsigned long long)key->wk_keyrsc);
+}
+
 void wlan_urtwn_dump(void) {
 	struct urtwn_softc *sc = urtwn_reg_softc;
 	struct ieee80211com *ic;
@@ -127,12 +173,50 @@ void wlan_urtwn_dump(void) {
 		return;
 	}
 	ic = &sc->sc_ic;
+	if (ic->ic_bss == NULL) {
+		printf("wlan: no BSS\n");
+		return;
+	}
+	printf("wlan mac=%s flags=%x mtu=%u\n",
+	    ether_sprintf(ic->ic_myaddr), sc->sc_if.if_flags, sc->sc_if.if_mtu);
+	printf("wlan bssid=%s ni_flags=%x caps=%x\n",
+	    ether_sprintf(ic->ic_bss->ni_bssid), ic->ic_bss->ni_flags, ic->ic_caps);
+	wlan_dump_key("unicast", &ic->ic_bss->ni_ucastkey);
+	for (unsigned i = 0; i < IEEE80211_WEP_NKID; i++) {
+		printf("group[%u] ", i);
+		wlan_dump_key("key", &ic->ic_nw_keys[i]);
+	}
+	printf("wlan stats tx=%llu txerr=%llu rx=%llu rxerr=%llu auth=%x key=%x\n",
+	    (unsigned long long)sc->sc_if.if_data.if_opackets,
+	    (unsigned long long)sc->sc_if.if_data.if_oerrors,
+	    (unsigned long long)sc->sc_if.if_data.if_ipackets,
+	    (unsigned long long)sc->sc_if.if_data.if_ierrors,
+	    ic->ic_bss->ni_flags, ic->ic_bss->ni_ucastkey.wk_flags);
+	printf("wlan crypto no-key=%u wepfail=%u ccmpmic=%u ccmpreplay=%u unauth=%u\n",
+	    ic->ic_stats.is_tx_nodefkey, ic->ic_stats.is_rx_wepfail,
+	    ic->ic_stats.is_rx_ccmpmic, ic->ic_stats.is_rx_ccmpreplay,
+	    ic->ic_stats.is_rx_unauth);
+	printf("wlan ccmpformat=%u\n", ic->ic_stats.is_rx_ccmpformat);
+	if (sc->sc_if.if_flags & IFF_RUNNING) {
+		printf("urtwn RCR=%08x RXFLTMAP=%04x/%04x/%04x SECCFG=%02x\n",
+		    urtwn_read_4(sc, R92C_RCR), urtwn_read_2(sc, R92C_RXFLTMAP0),
+		    urtwn_read_2(sc, R92C_RXFLTMAP1), urtwn_read_2(sc, R92C_RXFLTMAP2),
+		    urtwn_read_1(sc, R92C_SECCFG));
+		printf("urtwn BSSID registers=%08x/%04x\n",
+		    urtwn_read_4(sc, R92C_BSSID), urtwn_read_2(sc, R92C_BSSID + 4));
+	}
 	printf("urtwn state=%s opmode=%d ch=%d\n",
 	    ic->ic_state >= 0 && ic->ic_state < IEEE80211_S_MAX ?
 	        ieee80211_state_name[ic->ic_state] : "?",
 	    ic->ic_opmode,
 	    ic->ic_curchan != NULL ? ic->ic_curchan->ic_freq : 0);
-	ieee80211_iterate_nodes(&ic->ic_scan, wlan_print_node_cb, NULL);
+}
+
+void wlan_urtwn_scan_dump(void) {
+	if (urtwn_reg_softc != NULL) {
+		ieee80211_iterate_nodes(&urtwn_reg_softc->sc_ic.ic_scan,
+		    wlan_print_node_cb, NULL);
+	}
 }
 
 void wlan_urtwn_detach(void *priv) {

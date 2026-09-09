@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
+#include <mem/sysmalloc.h>
 
 #undef malloc
 #undef free
@@ -24,6 +25,7 @@
 #include "../../compat/netbsd/sys/systm.h"
 #include "../../compat/netbsd/sys/mbuf.h"
 #include "../../compat/netbsd/sys/endian.h"
+#include "../../compat/netbsd/net/route.h"
 
 #include "../port.h"
 
@@ -60,6 +62,37 @@ static wlan_eapol_rx_fn wlan_eapol_rx;
 static void *wlan_eapol_rx_arg;
 static wlan_data_rx_fn wlan_data_rx;
 static void *wlan_data_rx_arg;
+static wlan_event_fn wlan_event;
+static void *wlan_event_arg;
+
+void wlan_port_set_event_handler(wlan_event_fn fn, void *arg) {
+	wlan_event_arg = arg;
+	wlan_event = fn;
+}
+
+void rt_ieee80211msg(struct ifnet *ifp, int what, const void *data, size_t len) {
+	enum wlan_port_event event;
+
+	(void) ifp;
+	if (wlan_event == NULL) {
+		return;
+	}
+	switch (what) {
+	case RTM_IEEE80211_SCAN:
+		event = WLAN_PORT_SCAN_DONE;
+		break;
+	case RTM_IEEE80211_ASSOC:
+	case RTM_IEEE80211_REASSOC:
+		event = WLAN_PORT_ASSOC;
+		break;
+	case RTM_IEEE80211_DISASSOC:
+		event = WLAN_PORT_DISASSOC;
+		break;
+	default:
+		return;
+	}
+	wlan_event(event, len >= ETHER_ADDR_LEN ? data : NULL, wlan_event_arg);
+}
 
 void wlan_port_set_eapol_rx(wlan_eapol_rx_fn fn, void *arg) {
 	wlan_eapol_rx = fn;
@@ -127,7 +160,7 @@ void ifmedia_init_with_lock(struct ifmedia *ifm, int dontcare_mask,
 void ifmedia_add(struct ifmedia *ifm, int mword, int data, void *aux) {
 	struct ifmedia_entry *e;
 
-	e = malloc(sizeof(struct ifmedia_entry));
+	e = sysmalloc(sizeof(struct ifmedia_entry));
 	if (e == NULL) {
 		return;
 	}
@@ -158,7 +191,7 @@ void ifmedia_fini(struct ifmedia *ifm) {
 	e = TAILQ_FIRST(&ifm->ifm_list);
 	while (e != NULL) {
 		n = TAILQ_NEXT(e, ifm_list);
-		free(e);
+		sysfree(e);
 		e = n;
 	}
 	TAILQ_INIT(&ifm->ifm_list);

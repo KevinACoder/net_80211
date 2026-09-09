@@ -137,6 +137,21 @@ typedef void (*wlan_data_rx_fn)(const uint8_t *frame, size_t len,
 void wlan_port_set_eapol_rx(wlan_eapol_rx_fn fn, void *arg);
 void wlan_port_set_data_rx(wlan_data_rx_fn fn, void *arg);
 
+enum wlan_port_event {
+	WLAN_PORT_SCAN_DONE,
+	WLAN_PORT_ASSOC,
+	WLAN_PORT_DISASSOC,
+};
+
+/* Borrowed address, valid only during the callback. Consumers copy and
+ * queue notifications; they must not re-enter the protocol state machine. */
+typedef void (*wlan_event_fn)(enum wlan_port_event event,
+    const uint8_t *addr, void *arg);
+void wlan_port_set_event_handler(wlan_event_fn fn, void *arg);
+
+/* Start one complete scan on the device worker, with no automatic join. */
+int wlan_port_scan(const uint8_t *ssid, size_t len);
+
 /* Send a full ethernet frame out of the wlan interface (queued to the
  * ifnet, encrypted/encapsulated by net80211). Returns len or -1. */
 int wlan_port_xmit(const uint8_t *frame, size_t len);
