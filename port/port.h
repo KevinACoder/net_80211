@@ -9,14 +9,20 @@
  * the port, while the pieces that differ structurally between OSes go
  * through this header.
  *
- * A port provides:
- *   1. implementations for the compat/netbsd/ declarations (memory,
- *      locks, mbuf, ifnet shell, usbd_* and friends),
- *   2. the bus abstraction below (USB host),
- *   3. the firmware lookup,
- *   4. the presentation layer (how the wlan interface appears to the
- *      host stack: embox netdev + cfg80211, lwip netif, ...),
- *   5. one port_wlan_init() call from the environment.
+ * Ports live in three categories under port/:
+ *   osal/<os>/    the OS adaptation (locks, threads, timers, firmware
+ *                 storage) behind the compat/netbsd/ declarations,
+ *   bus/<bus>/    one directory per bus backend (usb/ with its
+ *                 port_usb.h types, pcie/ and sd/ reserved), bringing
+ *                 an attached device to the chip driver,
+ *   net/<stack>/  the presentation layer (how the wlan interface
+ *                 appears to the host stack: embox netdev + cfg80211,
+ *                 lwip netif, ...).
+ *
+ * This header is the bus-agnostic contract: firmware lookup,
+ * presentation hooks, the chip driver registry and the port lifecycle.
+ * Bus-specific types sit next to their backend (port/bus/usb/port_usb.h
+ * for USB) and are only visible as opaque structs here.
  *
  * The set of compiled-in chip drivers is discovered through
  * WLAN_CHIP_DRIVERS (a weak NULL-terminated array), so adding a driver
@@ -29,64 +35,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* ------------------------------------------------------------------
- * Bus: USB host
- *
- * Mirrors the UsbDevice/UsbPipe operations the imported BSD drivers
- * use through usbd_*: synchronous vendor control transfers for the
- * register file and the firmware download, and exclusive bulk pipes
- * for the frame paths.
- */
-
-enum wlan_usb_speed {
-	WLAN_USB_SPEED_LOW,
-	WLAN_USB_SPEED_FULL,
-	WLAN_USB_SPEED_HIGH,
-	WLAN_USB_SPEED_SUPER,
-};
-
-/* A claimed USB device. The embox adapter keeps the endpoint handles
- * here; the NetBSD-shim world only sees opaque pointers. */
-struct wlan_usb_dev {
-	void *port_priv; /* port-owned object (usbd_device shell) */
-
-	/* environment device handle and its endpoints */
-	void *env_dev;
-	void *ctrl_endp;
-	void *bulk_endp[4];
-	int bulk_endp_n;
-	uint8_t bulk_endp_addr[4];
-	uint8_t bulk_endp_dir_in[4];
-
-	enum wlan_usb_speed speed;
-	uint16_t vendor;
-	uint16_t product;
-};
-
-struct wlan_usb_bus_ops {
-	/* Open the device found in the attached topology and claim the
-	 * default control pipe. Called once per match. */
-	int (*open)(struct wlan_usb_dev *dev);
-	void (*close)(struct wlan_usb_dev *dev);
-
-	/* Synchronous control transfer on the default pipe. */
-	int (*ctrl_xfer)(struct wlan_usb_dev *dev, uint8_t req_type,
-	    uint8_t request, uint16_t value, uint16_t index,
-	    uint16_t len, void *buf, int timeout_ms);
-
-	/* Open/close a bulk pipe by endpoint number. */
-	int (*bulk_open)(struct wlan_usb_dev *dev, uint8_t endp, int dir_in);
-	void (*bulk_close)(struct wlan_usb_dev *dev, uint8_t endp);
-
-	/* Synchronous bulk transfer; returns the transferred length or a
-	 * negative errno. dir selects the pipe opened before. */
-	int (*bulk_xfer)(struct wlan_usb_dev *dev, uint8_t endp, int dir_in,
-	    void *buf, uint16_t len, int timeout_ms);
-
-	/* Clear a halted bulk endpoint. */
-	int (*bulk_clear_halt)(struct wlan_usb_dev *dev, uint8_t endp,
-	    int dir_in);
-};
+/* USB bus types; define WLAN_BUS_USB backends include the full
+ * definitions from port/bus/usb/port_usb.h. */
+struct wlan_usb_dev;
+struct wlan_usb_id;
 
 /* ------------------------------------------------------------------
  * Firmware
@@ -162,11 +114,6 @@ int wlan_port_get_hwaddr(uint8_t addr[6]);
 /* ------------------------------------------------------------------
  * Driver registry
  */
-
-struct wlan_usb_id {
-	uint16_t vid;
-	uint16_t pid;
-};
 
 struct wlan_chip_driver {
 	const char *name;

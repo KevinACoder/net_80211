@@ -51,6 +51,7 @@
 #include <dev/usb/usbdi.h>
 #include <dev/usb/usbdivar.h>
 #include <port/port.h>
+#include <port/bus/usb/port_usb.h>
 
 #include "wlan_port_cherryusb.h"
 

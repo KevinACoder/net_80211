@@ -33,9 +33,10 @@
 #include <driver/urtwn/rtwnreg.h>
 #include <driver/urtwn/if_urtwnreg.h>
 #include <port/port.h>
+#include <port/bus/usb/port_usb.h>
 
 #include <driver/urtwn/if_urtwnvar.h>
-#include <port/embox/wlan_port_embox.h>
+#include <port/osal/embox/wlan_port_embox.h>
 
 /* the verbatim import compiled into this unit so its static glue
  * (CFATTACH_DECL_NEW tables) stays intact */

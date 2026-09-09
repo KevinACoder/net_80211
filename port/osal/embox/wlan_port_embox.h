@@ -8,6 +8,7 @@
 
 struct ifnet;
 #include <port/port.h>
+#include <port/bus/usb/port_usb.h>
 
 #define WLAN_PORT_MAX_IF 2
 #define WLAN_PORT_MAX_BULK_EP 4
