@@ -12,4 +12,5 @@ sources plus a small registration translation unit that exposes a
 - `ioctl`-free scan/connect paths run through net80211
 
 The driver talks to the bus only through the port interface
-(`port/port.h` bus section), never directly to an OS USB API.
+(`port/port.h`, with the USB types from `port/bus/usb/port_usb.h`),
+never directly to an OS USB API.

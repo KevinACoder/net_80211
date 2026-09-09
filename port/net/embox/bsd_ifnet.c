@@ -27,7 +27,7 @@
 #include "../../compat/netbsd/sys/endian.h"
 #include "../../compat/netbsd/net/route.h"
 
-#include "../port.h"
+#include "../../port.h"
 
 #undef malloc
 #undef free

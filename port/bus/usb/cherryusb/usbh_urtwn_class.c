@@ -17,7 +17,8 @@
 #include <usbh_core.h>
 
 #include <port/port.h>
-#include <port/embox/wlan_port_embox.h>
+#include <port/bus/usb/port_usb.h>
+#include <port/osal/embox/wlan_port_embox.h>
 #include "wlan_port_cherryusb.h"
 
 extern const struct wlan_chip_driver *const wlan_chip_drivers[];
