@@ -31,6 +31,18 @@
 
 #define __COPYRIGHT(x)
 #define __RCSID(x)
+#ifndef __SHIFTIN
+#define __SHIFTIN(v, mask) (((uintmax_t)(v) << __builtin_ctzll(mask)) & (mask))
+#endif
+#ifndef __SHIFTOUT
+#define __SHIFTOUT(v, mask) (((uintmax_t)(v) & (mask)) >> __builtin_ctzll(mask))
+#endif
+
+#ifndef __GNUC_PREREQ__
+#define __GNUC_PREREQ__(maj, min) \
+    ((__GNUC__ << 16) + __GNUC_MINOR__ >= ((maj) << 16) + (min))
+#endif
+
 #define __KERNEL_RCSID(n, x)
 #define __SCCSID(x)
 
@@ -38,16 +50,23 @@
  * NetBSD link_set mechanism. There is no equivalent on the ports, and
  * the drivers never call the registration functions; the ciphers stay
  * unregistered (scan mode only needs the built-in NONE cipher). */
+#ifndef __link_set_add_text
 #define __link_set_add_text(set, sym)
 #define __link_set_add_rodata(set, sym)
 #define __link_set_decl(set, ptype)
 #define __link_set_foreach(pvar, set)
-
-#endif /* _SYS_CDEFS_H_ */
+#endif
 
 /* bitfield helpers from NetBSD sys/types.h */
+#ifndef __BIT
 #define __BIT(n) ((uintmax_t)1 << (n))
-#define __BITS(hi, lo) (((~(uintmax_t)0 << (lo)) & (~(uintmax_t)0 >> (63 - (hi)))) & ~(~(uintmax_t)0 << (hi)) ^ 0)
 #define SET(t, f) ((t) |= (f))
 #define CLR(t, f) ((t) &= ~(f))
 #define ISSET(t, f) ((t) & (f))
+#endif
+
+#ifndef __BITS
+#define __BITS(hi, lo) ((UINT64_MAX >> (63 - (hi))) & (UINT64_MAX << (lo)))
+#endif
+
+#endif /* _SYS_CDEFS_H_ */

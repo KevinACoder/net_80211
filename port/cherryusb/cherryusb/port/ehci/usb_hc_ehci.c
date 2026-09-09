@@ -1311,6 +1311,19 @@ int usbh_submit_urb(struct usbh_urb *urb)
     }
     return ret;
 errout_timeout:
+#ifdef CONFIG_USB_EHCI_DESC_DCACHE_ENABLE
+    if (urb->hcpriv != NULL) {
+        struct ehci_qtd_hw *qtd =
+            EHCI_ADDR2QTD(((struct ehci_qh_hw *)urb->hcpriv)->first_qtd);
+
+        while (qtd != NULL) {
+            usb_dcache_invalidate((uintptr_t)&qtd->hw, CONFIG_USB_EHCI_ALIGN_SIZE);
+            printf("[ehci] ctrl timeout: qtd token=%08x len=%u\r\n",
+                   qtd->hw.token, qtd->length);
+            qtd = EHCI_ADDR2QTD(qtd->hw.next_qtd);
+        }
+    }
+#endif
     urb->timeout = 0;
     usbh_kill_urb(urb);
     return ret;
@@ -1475,7 +1488,8 @@ void USBH_IRQHandler(uint8_t busid)
     if (usbsts & EHCI_USBSTS_IAA) {
         for (uint8_t index = 0; index < CONFIG_USB_EHCI_QH_NUM; index++) {
             struct ehci_qh_hw *qh = &ehci_qh_pool[bus->hcd.hcd_id][index];
-            if (qh->remove_in_iaad) {
+            if (qh->remove_in_iaad && qh->urb != NULL &&
+                qh->urb->hport != NULL) {
                 ehci_urb_waitup(bus, qh->urb);
             }
         }

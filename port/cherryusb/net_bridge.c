@@ -14,6 +14,9 @@
 #include <embox/unit.h>
 
 #include <kernel/thread.h>
+#include <kernel/task.h>
+#include <kernel/task/kernel_task.h>
+#include <util/err.h>
 
 #include <usbh_core.h>
 
@@ -33,7 +36,14 @@ int wlan_port_if_n;
 
 /* embox thread plumbing for the usbdi shim workers */
 void *wlan_port_thread_create(void *(*run)(void *), void *arg) {
-	return thread_create(THREAD_FLAG_DETACHED, run, arg);
+	struct thread *t = thread_create(THREAD_FLAG_NOTASK | THREAD_FLAG_SUSPENDED,
+	    run, arg);
+	if (ptr2err(t)) {
+		return NULL;
+	}
+	task_thread_register(task_kernel_task(), t);
+	thread_detach(t);
+	return t;
 }
 
 void wlan_port_thread_start(void *thread) {

@@ -13,6 +13,8 @@
 
 #include "port_config.h"
 
+#include "../compat/netbsd/sys/cdefs.h"
+
 /* Pre-empt the embox headers that would shadow or clash with the
  * compat ones; claims must precede every include below. */
 #ifndef NET_IF_H_

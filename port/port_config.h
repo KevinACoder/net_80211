@@ -71,7 +71,7 @@ typedef unsigned long ticks_t;
 #define __BIT(n) ((uintmax_t)1 << (n))
 #endif
 #ifndef __BITS
-#define __BITS(hi, lo) (((1ULL << (hi)) - 1) & ~((1ULL << (lo)) - 1))
+#define __BITS(hi, lo) ((UINT64_MAX >> (63 - (hi))) & (UINT64_MAX << (lo)))
 #endif
 #ifndef SET
 #define SET(t, f) ((t) |= (f))

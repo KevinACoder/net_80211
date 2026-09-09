@@ -22,6 +22,7 @@
 #include <kernel/thread/sync/cond.h>
 #include <kernel/time/sys_timer.h>
 #include <kernel/time/ktime.h>
+#include <mem/sysmalloc.h>
 
 #include <sys/systm.h>
 #include <sys/malloc.h>
@@ -65,7 +66,8 @@ void *wlan_kmalloc(size_t size, int flags, int type) {
 	void *p;
 
 	(void) type;
-	p = malloc(size); /* the embox heap blocks on exhaustion */
+	/* Drivers can initialize from a short-lived shell command task. */
+	p = sysmalloc(size);
 	if (p != NULL && (flags & M_ZERO)) {
 		memset(p, 0, size);
 	}
@@ -74,7 +76,7 @@ void *wlan_kmalloc(size_t size, int flags, int type) {
 
 void wlan_kfree(void *p, int type) {
 	(void) type;
-	free(p);
+	sysfree(p);
 }
 
 void *kmem_intr_alloc(size_t size, int flags) {
@@ -198,6 +200,10 @@ int callout_init(callout_t *c0, int flags) {
 
 	(void) flags;
 	c->hc_timer = sys_timer_alloc();
+	if (c->hc_timer == NULL) {
+		return ENOMEM;
+	}
+	memset(c->hc_timer, 0, sizeof(struct sys_timer));
 	c->hc_fn = NULL;
 	c->hc_arg = NULL;
 	c->hc_pending = 0;
@@ -219,8 +225,9 @@ int callout_schedule(callout_t *c0, int ticks) {
 		ticks = 1;
 	}
 	sys_timer_stop(c->hc_timer);
+	c->hc_pending = 1;
 	return sys_timer_init_start_msec(c->hc_timer,
-	    SYS_TIMER_PERIODIC, (uint32_t) ticks * 10,
+	    SYS_TIMER_ONESHOT, (uint32_t) ticks * 1000 / hz,
 	    host_callout_fire, c);
 }
 
@@ -239,6 +246,10 @@ int callout_halt(callout_t *c, kmutex_t *lock) {
 
 void callout_destroy(callout_t *c) {
 	callout_stop(c);
+	if (c->hc_timer != NULL) {
+		sys_timer_free(c->hc_timer);
+		c->hc_timer = NULL;
+	}
 }
 
 bool callout_pending(callout_t *c) {

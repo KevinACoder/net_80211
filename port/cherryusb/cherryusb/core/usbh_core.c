@@ -700,6 +700,10 @@ int usbh_control_transfer(struct usbh_hubport *hport, struct usb_setup_packet *s
 {
     struct usbh_urb *urb;
     volatile uint8_t retry = 3;
+    /* int, not size_t: negative error codes must compare as "short
+     * transfer", otherwise they slip into the (ret - setup_len) branch
+     * and come out corrupted (e.g. -USB_ERR_TIMEOUT returns as -22). */
+    int setup_len = (int)sizeof(struct usb_setup_packet);
     int ret;
 
     if (!hport || !setup) {
@@ -720,10 +724,10 @@ resubmit:
     usbh_control_urb_fill(urb, hport, setup, buffer, setup->wLength, CONFIG_USBHOST_CONTROL_TRANSFER_TIMEOUT, NULL, NULL);
     ret = usbh_submit_urb(urb);
     if (ret == 0) {
-        ret = urb->actual_length;
+        ret = (int)urb->actual_length;
     }
 
-    if (ret < sizeof(struct usb_setup_packet) && (ret != -USB_ERR_TIMEOUT)) {
+    if (ret < setup_len && (ret != -USB_ERR_TIMEOUT)) {
         retry--;
         if (retry > 0) {
             USB_LOG_WRN("Control transfer failed, errorcode %d, retrying...\r\n", ret);
@@ -732,7 +736,7 @@ resubmit:
     }
 
     usb_osal_mutex_give(hport->mutex);
-    return ret < sizeof(struct usb_setup_packet) ? ret : (ret - sizeof(struct usb_setup_packet));
+    return ret < setup_len ? ret : (ret - setup_len);
 }
 
 int usbh_get_string_desc(struct usbh_hubport *hport, uint8_t index, uint8_t *output, uint16_t output_len)
