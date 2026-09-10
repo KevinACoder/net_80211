@@ -24,4 +24,11 @@ struct wlan_port_iface {
 extern struct wlan_port_iface *wlan_port_ifs[WLAN_PORT_MAX_IF];
 extern int wlan_port_if_n;
 
+/* Port serializer: replaces the splnet() discipline of the imported
+ * PCI drivers (spl is a no-op on this port). Driver adapter entries
+ * take it; tsleep drops it around the wait. */
+void wlan_port_serializer_lock(void);
+void wlan_port_serializer_unlock(void);
+void *wlan_port_serializer_owner(void);
+
 #endif /* WLAN_PORT_EMBOX_H_ */

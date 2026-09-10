@@ -16,10 +16,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+#include <embox/unit.h>
 
 #include <kernel/thread.h>
 #include <kernel/thread/sync/mutex.h>
 #include <kernel/thread/sync/cond.h>
+#include <kernel/time/time.h>
 #include <kernel/time/sys_timer.h>
 #include <kernel/time/ktime.h>
 #include <mem/sysmalloc.h>
@@ -163,9 +167,18 @@ int wlan_cv_wait(kcondvar_t *cv, kmutex_t *m) {
 }
 
 int wlan_cv_timedwait(kcondvar_t *cv, kmutex_t *m, int ticks) {
-	(void) ticks;
-	/* the LED dance is the only user; waiting unbounded is fine */
-	return cond_wait(hc_cond(cv), hm_mutex(m));
+	struct timespec ts;
+
+	/* bounded wait: callers poll a predicate around this, so a
+	 * broadcast is not required for progress - but the deadline is */
+	clock_gettime(CLOCK_REALTIME, &ts);
+	ts.tv_sec += (ticks * 1000 / hz) / 1000;
+	ts.tv_nsec += ((ticks * 1000 / hz) % 1000) * NSEC_PER_MSEC;
+	if (ts.tv_nsec >= (long) NSEC_PER_MSEC * 1000) {
+		ts.tv_sec += 1;
+		ts.tv_nsec -= (long) NSEC_PER_MSEC * 1000;
+	}
+	return cond_timedwait(hc_cond(cv), hm_mutex(m), &ts);
 }
 
 int wlan_cv_broadcast(kcondvar_t *cv) {
@@ -179,14 +192,14 @@ void wlan_cv_destroy(kcondvar_t *cv) {
 
 /* ------------------------------------------------------------------ */
 
-static struct host_callout *hc_cast(callout_t *c) {
-	_Static_assert(sizeof(struct host_callout) >= sizeof(void *) * 4,
+static struct callout *hc_cast(callout_t *c) {
+	_Static_assert(sizeof(struct callout) >= sizeof(void *) * 4,
 	    "callout shell");
-	return (struct host_callout *) c;
+	return (struct callout *) c;
 }
 
 static void host_callout_fire(struct sys_timer *tmr, void *param) {
-	struct host_callout *c = param;
+	struct callout *c = param;
 
 	(void) tmr;
 	c->hc_pending = 0;
@@ -196,7 +209,7 @@ static void host_callout_fire(struct sys_timer *tmr, void *param) {
 }
 
 int callout_init(callout_t *c0, int flags) {
-	struct host_callout *c = hc_cast(c0);
+	struct callout *c = hc_cast(c0);
 
 	(void) flags;
 	c->hc_timer = sys_timer_alloc();
@@ -211,7 +224,7 @@ int callout_init(callout_t *c0, int flags) {
 }
 
 int callout_setfunc(callout_t *c0, callout_fn_t fn, void *arg) {
-	struct host_callout *c = hc_cast(c0);
+	struct callout *c = hc_cast(c0);
 
 	c->hc_fn = fn;
 	c->hc_arg = arg;
@@ -219,7 +232,7 @@ int callout_setfunc(callout_t *c0, callout_fn_t fn, void *arg) {
 }
 
 int callout_schedule(callout_t *c0, int ticks) {
-	struct host_callout *c = hc_cast(c0);
+	struct callout *c = hc_cast(c0);
 
 	if (ticks <= 0) {
 		ticks = 1;
@@ -330,6 +343,179 @@ ipl_t splnet(void) {
 void splx(ipl_t ipl) {
 	(void) ipl;
 }
+
+/* ------------------------------------------------------------------ */
+/* Port serializer.
+ *
+ * The imported PCIe driver has interrupt, interrupt-worker, state
+ * machine and ioctl contexts that NetBSD serialises with splnet();
+ * spl is a no-op here, so the driver adapter wraps every entry with
+ * this lock instead. Sleeping waits drop it (see tsleep) so the
+ * interrupt worker can deliver completions. */
+
+static struct mutex wlan_ser_mtx;
+static struct thread *wlan_ser_owner;
+
+void wlan_port_serializer_lock(void) {
+	mutex_lock(&wlan_ser_mtx);
+	wlan_ser_owner = thread_self();
+}
+
+void wlan_port_serializer_unlock(void) {
+	wlan_ser_owner = NULL;
+	mutex_unlock(&wlan_ser_mtx);
+}
+
+void *wlan_port_serializer_owner(void) {
+	return wlan_ser_owner;
+}
+
+/* ------------------------------------------------------------------ */
+/* tsleep/wakeup: identified bounded waits over one global (mutex, cv)
+ * pair. A waiter releases the port serializer around the wait. */
+
+struct wlan_tsleep_slot {
+	void *ident;
+	int fired;
+	struct wlan_tsleep_slot *next;
+};
+
+static struct mutex wlan_tsleep_mtx;
+static struct cond wlan_tsleep_cv;
+static struct wlan_tsleep_slot *wlan_tsleep_slots;
+
+/* Wakeups that found no waiter are remembered here for a short window.
+ * The imported drivers use the Unix check-then-tsleep idiom, which
+ * relies on the interrupt path not being able to slip a wakeup in
+ * between the predicate test and the sleep; spl does that on NetBSD
+ * but is a no-op here, so a wakeup that arrives in that window would
+ * otherwise be lost and the caller would run into its timeout. */
+#define WLAN_TSLEEP_PENDING_MAX 16
+static void *wlan_tsleep_pending[WLAN_TSLEEP_PENDING_MAX];
+static int wlan_tsleep_pending_n;
+
+static int wlan_tsleep_consume_pending(void *ident) {
+	int i;
+
+	for (i = 0; i < wlan_tsleep_pending_n; i++) {
+		if (wlan_tsleep_pending[i] == ident) {
+			wlan_tsleep_pending[i] =
+			    wlan_tsleep_pending[--wlan_tsleep_pending_n];
+			return 1;
+		}
+	}
+	return 0;
+}
+
+int tsleep(void *ident, int pri, const char *wmesg, int timo) {
+	struct wlan_tsleep_slot w;
+	struct wlan_tsleep_slot **pp;
+	struct timespec ts;
+	int64_t deadline_ms;
+	int held;
+	int rc = 0;
+
+	(void) pri;
+	(void) wmesg;
+
+	w.ident = ident;
+	w.fired = 0;
+
+	mutex_lock(&wlan_tsleep_mtx);
+	w.next = wlan_tsleep_slots;
+	wlan_tsleep_slots = &w;
+	/* a wakeup may have raced in before the slot was linked */
+	if (wlan_tsleep_consume_pending(ident)) {
+		w.fired = 1;
+	}
+	mutex_unlock(&wlan_tsleep_mtx);
+
+	/*timo: ticks; <=0 means forever */
+	deadline_ms = (timo <= 0) ? -1 :
+	    ktime_get_ns() / NSEC_PER_MSEC + (int64_t) timo * 1000 / hz;
+
+	held = wlan_port_serializer_owner() == thread_self();
+	if (held) {
+		wlan_port_serializer_unlock();
+	}
+
+	mutex_lock(&wlan_tsleep_mtx);
+	while (!w.fired) {
+		clock_gettime(CLOCK_REALTIME, &ts);
+		if (deadline_ms >= 0) {
+			int64_t left = deadline_ms -
+			    (int64_t) ts.tv_sec * 1000 - ts.tv_nsec / NSEC_PER_MSEC;
+			if (left <= 0) {
+				rc = EWOULDBLOCK;
+				break;
+			}
+			if (left > 20) {
+				left = 20; /* poll quantum */
+			}
+			ts.tv_sec += left / 1000;
+			ts.tv_nsec += (left % 1000) * NSEC_PER_MSEC;
+		} else {
+			ts.tv_sec += 20;
+		}
+		if (ts.tv_nsec >= (long) NSEC_PER_MSEC * 1000) {
+			ts.tv_sec += 1;
+			ts.tv_nsec -= (long) NSEC_PER_MSEC * 1000;
+		}
+		cond_timedwait(&wlan_tsleep_cv, &wlan_tsleep_mtx, &ts);
+	}
+	for (pp = &wlan_tsleep_slots; *pp != NULL; pp = &(*pp)->next) {
+		if (*pp == &w) {
+			*pp = w.next;
+			break;
+		}
+	}
+	mutex_unlock(&wlan_tsleep_mtx);
+
+	if (held) {
+		wlan_port_serializer_lock();
+	}
+	return rc;
+}
+
+void wakeup(void *ident) {
+	struct wlan_tsleep_slot *s;
+	int matched = 0;
+
+	mutex_lock(&wlan_tsleep_mtx);
+	for (s = wlan_tsleep_slots; s != NULL; s = s->next) {
+		if (s->ident == ident) {
+			s->fired = 1;
+			matched = 1;
+		}
+	}
+	if (!matched && wlan_tsleep_pending_n < WLAN_TSLEEP_PENDING_MAX) {
+		wlan_tsleep_pending[wlan_tsleep_pending_n++] = ident;
+	}
+	cond_broadcast(&wlan_tsleep_cv);
+	mutex_unlock(&wlan_tsleep_mtx);
+}
+
+void wakeup_one(void *ident) {
+	wakeup(ident);
+}
+
+/* ------------------------------------------------------------------ */
+
+static int wlan_osal_init(void) {
+	struct condattr ca;
+
+	mutex_init_default(&wlan_ser_mtx, NULL);
+	mutex_init_default(&wlan_tsleep_mtx, NULL);
+	condattr_init(&ca);
+	/* the waiter (shell thread) and the waker (interrupt worker) cross
+	 * task boundaries; PROCESS_PRIVATE would reject the broadcast */
+	condattr_setpshared(&ca, PROCESS_SHARED);
+	cond_init(&wlan_tsleep_cv, &ca);
+	condattr_destroy(&ca);
+	return 0;
+}
+
+EMBOX_UNIT_INIT(wlan_osal_init);
 
 /* size guards for the embedded lock shells (see compat sys/mutex.h) */
 typedef char wlan_mutex_size_check[
