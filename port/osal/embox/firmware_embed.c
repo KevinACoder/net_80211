@@ -14,6 +14,7 @@
 #include <port/port.h>
 
 #include "rtl8188eufw_gen.c"
+#include "iwlwifi726017_gen.c"
 
 struct embedded_firmware {
 	const char *ef_name;
@@ -23,6 +24,7 @@ struct embedded_firmware {
 
 static const struct embedded_firmware wlan_firmwares[] = {
 	{ "rtl8188eufw.bin", rtl8188eufw_data, rtl8188eufw_size },
+	{ "iwlwifi-7260-17.ucode", iwlwifi726017_data, iwlwifi726017_size },
 	{ NULL, NULL, 0 }
 };
 
