@@ -204,12 +204,17 @@ int wlan_port_xmit_iwm(const uint8_t *frame, size_t len) {
 	m->m_len = m->m_pkthdr.len = (int) len;
 	memcpy(mtod(m, void *), frame, len);
 
+	/* The queue itself is an unprotected mbuf list. Hold the same
+	 * serializer as the consumer before publishing a new packet. */
+	wlan_port_serializer_lock();
 	IFQ_ENQUEUE(&ifp->if_snd, m, err);
 	if (err != 0) {
+		wlan_port_serializer_unlock();
 		m_freem(m);
 		return -1;
 	}
 	if_start_lock(ifp);
+	wlan_port_serializer_unlock();
 	return (int) len;
 }
 

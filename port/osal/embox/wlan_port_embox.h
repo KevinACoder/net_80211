@@ -31,4 +31,9 @@ void wlan_port_serializer_lock(void);
 void wlan_port_serializer_unlock(void);
 void *wlan_port_serializer_owner(void);
 
+/* Release the lock around a sleep and restore the saved hold count
+ * (0 when the caller was not holding it). */
+int wlan_port_serializer_suspend(void);
+void wlan_port_serializer_resume(int depth);
+
 #endif /* WLAN_PORT_EMBOX_H_ */

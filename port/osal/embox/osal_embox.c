@@ -355,19 +355,58 @@ void splx(ipl_t ipl) {
 
 static struct mutex wlan_ser_mtx;
 static struct thread *wlan_ser_owner;
+static int wlan_ser_depth;
 
+/* Reentrant: the serialized worker contexts (interrupt, state machine)
+ * can reach a path that takes the lock again through the transmit
+ * entry (e.g. a stack reply generated while draining RX). */
 void wlan_port_serializer_lock(void) {
+	if (wlan_ser_owner == thread_self()) {
+		wlan_ser_depth++;
+		return;
+	}
 	mutex_lock(&wlan_ser_mtx);
 	wlan_ser_owner = thread_self();
+	wlan_ser_depth = 1;
 }
 
 void wlan_port_serializer_unlock(void) {
+	if (wlan_ser_owner != thread_self() || wlan_ser_depth <= 0) {
+		panic("wlan serializer unlock by non-owner");
+	}
+	if (--wlan_ser_depth > 0) {
+		return;
+	}
 	wlan_ser_owner = NULL;
 	mutex_unlock(&wlan_ser_mtx);
 }
 
 void *wlan_port_serializer_owner(void) {
 	return wlan_ser_owner;
+}
+
+/* Fully release the lock around a sleep and return the saved hold
+ * count (0 when the caller was not holding it). */
+int wlan_port_serializer_suspend(void) {
+	int depth;
+
+	if (wlan_ser_owner != thread_self()) {
+		return 0;
+	}
+	depth = wlan_ser_depth;
+	wlan_ser_owner = NULL;
+	wlan_ser_depth = 0;
+	mutex_unlock(&wlan_ser_mtx);
+	return depth;
+}
+
+void wlan_port_serializer_resume(int depth) {
+	if (depth <= 0) {
+		return;
+	}
+	mutex_lock(&wlan_ser_mtx);
+	wlan_ser_owner = thread_self();
+	wlan_ser_depth = depth;
 }
 
 /* ------------------------------------------------------------------ */
@@ -434,10 +473,7 @@ int tsleep(void *ident, int pri, const char *wmesg, int timo) {
 	deadline_ms = (timo <= 0) ? -1 :
 	    ktime_get_ns() / NSEC_PER_MSEC + (int64_t) timo * 1000 / hz;
 
-	held = wlan_port_serializer_owner() == thread_self();
-	if (held) {
-		wlan_port_serializer_unlock();
-	}
+	held = wlan_port_serializer_suspend();
 
 	mutex_lock(&wlan_tsleep_mtx);
 	while (!w.fired) {
@@ -471,9 +507,7 @@ int tsleep(void *ident, int pri, const char *wmesg, int timo) {
 	}
 	mutex_unlock(&wlan_tsleep_mtx);
 
-	if (held) {
-		wlan_port_serializer_lock();
-	}
+	wlan_port_serializer_resume(held);
 	return rc;
 }
 

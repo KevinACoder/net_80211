@@ -193,4 +193,15 @@ struct wlan_chip_driver {
  * embox port wires wlan_port_init as its unit init. */
 void wlan_port_deinit(void);
 
+/* ------------------------------------------------------------------
+ * Driver serialization
+ *
+ * The imported drivers rely on the splnet() discipline of their host
+ * kernel to serialize the interrupt, state-machine and transmit
+ * contexts. The port provides a reentrant lock instead; it is taken
+ * around every driver entry and around the interface transmit path.
+ */
+void wlan_port_serializer_lock(void);
+void wlan_port_serializer_unlock(void);
+
 #endif /* NET80211_PORT_H_ */
