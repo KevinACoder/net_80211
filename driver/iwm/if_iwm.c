@@ -449,10 +449,9 @@ static int	iwm_update_quotas(struct iwm_softc *, struct iwm_node *);
 static int	iwm_auth(struct iwm_softc *);
 static int	iwm_assoc(struct iwm_softc *);
 static void	iwm_calib_timeout(void *);
-#ifndef IEEE80211_NO_HT
+/* NET80211_PORT(L): the rate table is needed for data TX even without HT */
 static void	iwm_setrates_task(void *);
 static int	iwm_setrates(struct iwm_node *);
-#endif
 static int	iwm_media_change(struct ifnet *);
 static int	iwm_do_newstate(struct ieee80211com *, enum ieee80211_state,
 		    int);
@@ -6044,7 +6043,11 @@ iwm_calib_timeout(void *arg)
 	callout_schedule(&sc->sc_calib_to, mstohz(500));
 }
 
-#ifndef IEEE80211_NO_HT
+/* NET80211_PORT(L): keep the rate-selection table available without HT.
+ * The TX command always sets IWM_TX_CMD_FLG_STA_RATE for data frames, so
+ * the firmware needs the IWM_LQ_CMD station table; compiling this out
+ * under IEEE80211_NO_HT leaves it unset and the uCode asserts on the
+ * first data frame. Only the HT rate entries stay conditional below. */
 static void
 iwm_setrates_task(void *arg)
 {
@@ -6156,7 +6159,6 @@ iwm_setrates(struct iwm_node *in)
 	cmd.data[0] = &in->in_lq;
 	return iwm_send_cmd(sc, &cmd);
 }
-#endif
 
 static int
 iwm_media_change(struct ifnet *ifp)
@@ -6336,8 +6338,15 @@ iwm_do_newstate(struct ieee80211com *ic, enum ieee80211_state nstate, int arg)
 		in->in_ni.ni_txrate = 0;
 #ifndef IEEE80211_NO_HT
 		in->in_ni.ni_txmcs = 0;
-		iwm_setrates(in);
 #endif
+		/* NET80211_PORT(L): install the station rate table before any
+		 * data frame can be queued; see iwm_setrates(). */
+		err = iwm_setrates(in);
+		if (err) {
+			aprint_error_dev(sc->sc_dev,
+			    "could not set station rates: %d\n", err);
+			return err;
+		}
 
 		callout_schedule(&sc->sc_calib_to, mstohz(500));
 		iwm_led_enable(sc);
