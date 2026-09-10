@@ -3,8 +3,8 @@
  * @brief Basic types for the NetBSD-imported sources.
  */
 
-#ifndef _SYS_TYPES_H_
-#define _SYS_TYPES_H_
+#ifndef _COMPAT_SYS_TYPES_H_
+#define _COMPAT_SYS_TYPES_H_
 
 #include <stdint.h>
 #include <stddef.h>
@@ -25,4 +25,19 @@ typedef uintptr_t vaddr_t;
 typedef uintptr_t paddr_t;
 typedef uintptr_t vsize_t;
 
-#endif /* _SYS_TYPES_H_ */
+#endif /* _COMPAT_SYS_TYPES_H_ */
+
+/*
+ * When this header shadows the libc <sys/types.h> (FreeRTOS port: the
+ * compat include path precedes the system directories), the libc
+ * headers (unistd/stat) still expect its POSIX types. Fall through to
+ * the libc types after the NetBSD ones; identical typedefs are legal
+ * C11. In the embox build the host include tree resolves <sys/types.h>
+ * first and this file is never processed.
+ */
+#ifndef _COMPAT_SYS_TYPES_LIBC_PASS_H_
+#define _COMPAT_SYS_TYPES_LIBC_PASS_H_
+#if defined(__NEWLIB__)
+#include_next <sys/types.h>
+#endif
+#endif

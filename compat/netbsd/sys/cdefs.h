@@ -3,8 +3,8 @@
  * @brief Compiler glue for the NetBSD-imported sources.
  */
 
-#ifndef _SYS_CDEFS_H_
-#define _SYS_CDEFS_H_
+#ifndef _COMPAT_SYS_CDEFS_H_
+#define _COMPAT_SYS_CDEFS_H_
 
 #define __CONCAT(a, b) a##b
 #define __STRING(x) #x
@@ -69,4 +69,4 @@
 #define __BITS(hi, lo) ((UINT64_MAX >> (63 - (hi))) & (UINT64_MAX << (lo)))
 #endif
 
-#endif /* _SYS_CDEFS_H_ */
+#endif /* _COMPAT_SYS_CDEFS_H_ */
