@@ -18,7 +18,11 @@
 
 #include <port/port.h>
 #include <port/bus/usb/port_usb.h>
+#ifdef WLAN_PORT_FREERTOS
+#include <port/osal/freertos/wlan_port_freertos.h>
+#else
 #include <port/osal/embox/wlan_port_embox.h>
+#endif
 #include "wlan_port_cherryusb.h"
 
 extern const struct wlan_chip_driver *const wlan_chip_drivers[];
