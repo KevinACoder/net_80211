@@ -130,6 +130,10 @@ void m_free_impl(struct mbuf *m);
 #define MGET(m, how, type) ((m) = m_get_impl((how), (type), 0))
 #define MGETHDR(m, how, type) ((m) = m_get_impl((how), (type), 1))
 #define MCLGET(m, how) ((void) ((m) != NULL && ((m)->m_flags |= M_EXT)))
+/* every mbuf already owns a full-size cluster; attaching external
+ * storage up to MCLBYTES is a flag operation here */
+#define MEXTMALLOC(m, len, how) \
+	((void) ((m) != NULL && (len) <= MCLBYTES && ((m)->m_flags |= M_EXT)))
 
 #define m_get(how, type) m_get_impl((how), (type), 0)
 #define m_gethdr(how, type) m_get_impl((how), (type), 1)

@@ -129,9 +129,14 @@ void if_percpuq_enqueue(void *pq, struct mbuf *m) {
 }
 
 void if_start_lock(struct ifnet *ifp) {
+	/* The transmit path is reached from the supplicant, the
+	 * state-machine worker and the interrupt worker alike; the
+	 * imported driver expects splnet() serialization here. */
+	wlan_port_serializer_lock();
 	if (ifp->if_start != NULL) {
 		ifp->if_start(ifp);
 	}
+	wlan_port_serializer_unlock();
 }
 
 void if_link_state_change(struct ifnet *ifp, int link_state) {

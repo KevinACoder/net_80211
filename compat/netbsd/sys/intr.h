@@ -23,6 +23,11 @@
 #define IPL_NET 2
 #endif
 
+/* the interrupt worker: the backend runs the handler on a thread */
+#define SOFTINT_NET 1
+void *softint_establish(int flags, void (*func)(void *), void *arg);
+void softint_schedule(void *sih);
+
 ipl_t splraiseipl(ipl_t);
 ipl_t splnet(void);
 bool cpu_intr_p(void);

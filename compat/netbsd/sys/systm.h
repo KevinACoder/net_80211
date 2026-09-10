@@ -47,6 +47,14 @@ static inline int isclr(const volatile unsigned char *p, unsigned int n) {
 ipl_t splnet(void);
 void splx(ipl_t);
 
+/* Process-context sleeps. timo is in ticks (<= 0 waits forever); the
+ * wait honours the timeout, dropping the port serializer around it so
+ * the interrupt worker can run while a firmware command is pending. */
+#define PCATCH 0x100
+int tsleep(void *ident, int pri, const char *wmesg, int timo);
+void wakeup(void *ident);
+void wakeup_one(void *ident);
+
 int uimin(int a, int b);
 int uimax(int a, int b);
 

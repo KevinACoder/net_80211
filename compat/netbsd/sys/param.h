@@ -30,3 +30,8 @@
 #define Hz 100
 
 #endif /* _SYS_PARAM_H_ */
+
+/* the drivers only need it as a size constant */
+#ifndef PAGE_SIZE
+#define PAGE_SIZE 4096
+#endif

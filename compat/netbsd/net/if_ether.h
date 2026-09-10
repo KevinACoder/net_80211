@@ -50,7 +50,22 @@ struct ethercom {
 
 const char *ether_sprintf(const uint8_t *mac);
 
+
+/* the multicast filters are a no-op on the ports (the firmware
+ * accepts group frames anyway) */
+static inline int ether_addmulti(const struct sockaddr *sa,
+	struct ethercom *ec) {
+	(void) sa; (void) ec;
+	return 0;
+}
+static inline int ether_delmulti(const struct sockaddr *sa,
+	struct ethercom *ec) {
+	(void) sa; (void) ec;
+	return 0;
+}
+
 #endif /* _COMPAT_NET_IF_ETHER_H_ */
 
 char *ether_snprintf(char *buf, size_t len, const uint8_t *mac);
+
 

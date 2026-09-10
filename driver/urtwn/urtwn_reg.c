@@ -51,6 +51,29 @@ static const struct wlan_usb_id urtwn_usb_ids[] = {
 
 struct urtwn_softc *urtwn_reg_softc;
 
+int wlan_urtwn_attach(struct wlan_usb_dev *usb, void *if_priv);
+
+static int wlan_urtwn_attach_bus(void *bus_dev, void *if_priv) {
+	return wlan_urtwn_attach((struct wlan_usb_dev *) bus_dev, if_priv);
+}
+
+int wlan_urtwn_up(void);
+void wlan_urtwn_dump(void);
+void wlan_urtwn_scan_dump(void);
+int wlan_port_scan_urtwn(const uint8_t *ssid, size_t len);
+int wlan_port_xmit_urtwn(const uint8_t *frame, size_t len);
+int wlan_port_get_hwaddr_urtwn(uint8_t addr[6]);
+
+static struct wlan_port_adapter urtwn_adapter = {
+	.name = "urtwn",
+	.up = wlan_urtwn_up,
+	.scan = wlan_port_scan_urtwn,
+	.xmit = wlan_port_xmit_urtwn,
+	.get_hwaddr = wlan_port_get_hwaddr_urtwn,
+	.status_dump = wlan_urtwn_dump,
+	.scan_dump = wlan_urtwn_scan_dump,
+};
+
 int wlan_urtwn_attach(struct wlan_usb_dev *usb, void *if_priv) {
 	struct urtwn_softc *sc;
 	struct device *self;
@@ -83,6 +106,8 @@ int wlan_urtwn_attach(struct wlan_usb_dev *usb, void *if_priv) {
 		/* remember the first healthy unit for the scan trigger */
 		if (urtwn_reg_softc == NULL) {
 			urtwn_reg_softc = sc;
+			urtwn_adapter.ic = &sc->sc_ic;
+			wlan_port_adapter_register(&urtwn_adapter);
 		}
 	}
 	return 0;
@@ -101,13 +126,13 @@ static void wlan_print_node_cb(void *arg, struct ieee80211_node *ni) {
 	    ni->ni_esslen, ni->ni_essid);
 }
 
-void wlan_urtwn_up(void) {
+int wlan_urtwn_up(void) {
 	struct urtwn_softc *sc = urtwn_reg_softc;
 	struct ifnet *ifp;
 
 	if (sc == NULL || sc->sc_dying) {
 		printf("wlan: no attached urtwn device\n");
-		return;
+		return -1;
 	}
 	ifp = &sc->sc_if;
 	if (!(ifp->if_flags & IFF_RUNNING)) {
@@ -117,6 +142,7 @@ void wlan_urtwn_up(void) {
 		ifp->if_init(ifp);
 		printf("wlan: if_init done, flags=%x\n", ifp->if_flags);
 	}
+	return 0;
 }
 
 struct wlan_scan_request {
@@ -141,7 +167,7 @@ static void wlan_scan_start(struct urtwn_softc *sc, void *arg) {
 	urtwn_newstate_cb(sc, &cmd);
 }
 
-int wlan_port_scan(const uint8_t *ssid, size_t len) {
+int wlan_port_scan_urtwn(const uint8_t *ssid, size_t len) {
 	struct urtwn_softc *sc = urtwn_reg_softc;
 	struct wlan_scan_request req = {0};
 
@@ -226,7 +252,7 @@ void wlan_urtwn_detach(void *priv) {
 	/* detach goes through urtwn_detach with the stored device shell */
 }
 
-int wlan_port_xmit(const uint8_t *frame, size_t len) {
+int wlan_port_xmit_urtwn(const uint8_t *frame, size_t len) {
 	struct urtwn_softc *sc = urtwn_reg_softc;
 	struct ifnet *ifp;
 	struct mbuf *m;
@@ -254,7 +280,7 @@ int wlan_port_xmit(const uint8_t *frame, size_t len) {
 	return (int) len;
 }
 
-int wlan_port_get_hwaddr(uint8_t addr[6]) {
+int wlan_port_get_hwaddr_urtwn(uint8_t addr[6]) {
 	struct urtwn_softc *sc = urtwn_reg_softc;
 	struct ifnet *ifp;
 
@@ -273,7 +299,7 @@ const struct wlan_chip_driver urtwn_driver = {
 	.name = "urtwn",
 	.bus = WLAN_BUS_USB,
 	.usb_ids = urtwn_usb_ids,
-	.attach = wlan_urtwn_attach,
+	.attach = wlan_urtwn_attach_bus,
 	.detach = wlan_urtwn_detach,
 	.stop = NULL,
 };

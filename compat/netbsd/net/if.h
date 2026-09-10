@@ -122,11 +122,20 @@ struct ifqueue {
 /* interface output queue alias used by the drivers */
 #define if_snd if_queue
 
+/* the ioctl-only multicast helpers need the union arm address */
+struct ifreq;
+static inline struct sockaddr *ifreq_getaddr(unsigned long cmd,
+	struct ifreq *ifr) {
+	(void) cmd;
+	return (struct sockaddr *) &ifr->ifr_ifru;
+}
+
 struct ifnet;
 typedef void (*if_start_fn)(struct ifnet *);
 typedef int (*if_ioctl_fn)(struct ifnet *, unsigned long, void *);
 typedef int (*if_init_fn)(struct ifnet *);
 typedef void (*if_watchdog_fn)(struct ifnet *);
+typedef void (*if_stop_fn)(struct ifnet *, int);
 
 struct ifnet {
 	char if_xname[IFNAMSIZ];
@@ -147,6 +156,7 @@ struct ifnet {
 	if_ioctl_fn if_ioctl;
 	if_init_fn if_init;
 	if_watchdog_fn if_watchdog;
+	if_stop_fn if_stop;
 
 	/* link-level address shell (sockaddr_dl payload) */
 	struct sockaddr_dl if_sadl_storage;
