@@ -35,10 +35,12 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* USB bus types; define WLAN_BUS_USB backends include the full
- * definitions from port/bus/usb/port_usb.h. */
+/* Bus types; backends include the full definitions from
+ * port/bus/<bus>/port_<bus>.h. */
 struct wlan_usb_dev;
 struct wlan_usb_id;
+struct wlan_pcie_dev;
+struct wlan_pcie_id;
 
 /* ------------------------------------------------------------------
  * Firmware
@@ -111,20 +113,64 @@ int wlan_port_xmit(const uint8_t *frame, size_t len);
 /* The interface hardware address (after attach). */
 int wlan_port_get_hwaddr(uint8_t addr[6]);
 
+/* Bring the first attached interface up (firmware load + power on).
+ * Provided by the port core on top of the driver up hooks. */
+int wlan_port_up(void);
+
+/* Diagnostics: the attached driver's softc/node dump and the net80211
+ * scan table. Provided by the port core. */
+void wlan_port_status_dump(void);
+void wlan_port_scan_dump(void);
+
+/* Focus the shell hooks on a named driver adapter. */
+int wlan_port_select(const char *name);
+
+/* The active adapter's ieee80211com (NULL before attach). */
+void *wlan_port_get_ic(void);
+
 /* ------------------------------------------------------------------
  * Driver registry
  */
 
+enum wlan_bus_type {
+	WLAN_BUS_USB = 1,
+	WLAN_BUS_PCIE = 2,
+};
+
+/* Control & diagnostics hooks a driver adapter offers the port shell.
+ * Every entry may be NULL; the port core dispatches onto the first
+ * adapter that registered. */
+struct wlan_port_adapter {
+	const char *name;
+	int (*up)(void);
+	int (*scan)(const uint8_t *ssid, size_t len);
+	int (*xmit)(const uint8_t *frame, size_t len);
+	int (*get_hwaddr)(uint8_t addr[6]);
+	void (*status_dump)(void);
+	void (*scan_dump)(void);
+	/* the adapter's ieee80211com, for the supplicant bridge; set at
+	 * attach time (the softc does not exist when the table is
+	 * declared) */
+	void *ic;
+};
+
+/* Called once by the driver adapter before/at attach time. */
+void wlan_port_adapter_register(const struct wlan_port_adapter *adapter);
+
 struct wlan_chip_driver {
 	const char *name;
-	enum { WLAN_BUS_USB = 1 } bus;
-	/* USB match table, terminated by vid==0 && pid==0. */
+	enum wlan_bus_type bus;
+	/* USB match table (WLAN_BUS_USB), terminated by vid==0 && pid==0. */
 	const struct wlan_usb_id *usb_ids;
+	/* PCI match table (WLAN_BUS_PCIE), terminated by vendor==0. */
+	const struct wlan_pcie_id *pcie_ids;
 
 	/* Attach the device: bring the chip up, load the firmware,
-	 * ieee80211_ifattach. if_priv is the port-owned ifnet shell.
-	 * Returns 0 on success; on failure the port closes the device. */
-	int (*attach)(struct wlan_usb_dev *usb, void *if_priv);
+	 * ieee80211_ifattach. bus_dev is the port device of the driver's
+	 * bus (struct wlan_usb_dev / struct wlan_pcie_dev); if_priv is the
+	 * port-owned ifnet shell. Returns 0 on success; on failure the
+	 * port closes the device. */
+	int (*attach)(void *bus_dev, void *if_priv);
 	void (*detach)(void *if_priv);
 	void (*stop)(void *if_priv);
 };

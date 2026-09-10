@@ -22,15 +22,22 @@
 #undef free
 #include <sys/systm.h>
 
-#define MH_ALIGN 4
+/* The data area starts MH_ALIGN into the cluster. PCIe RX hands the
+ * cluster to the device DMA: the allocation pads for a 64-byte
+ * aligned cluster and a full-line data offset, and the device region
+ * ends on a line boundary, so a POSTREAD invalidate never touches
+ * foreign data. */
+#define MH_ALIGN 256
+#define MH_DMA_PAD 1024
 
 struct mbuf *m_get_impl(int wait, int type, int pkthdr) {
 	struct mbuf *m;
+	uintptr_t cl;
 
 	if (wait == M_DONTWAIT) {
 		/* the embox heap blocks on exhaustion; same call either way */
 	}
-	m = sysmalloc(sizeof(struct mbuf) + MCLBYTES);
+	m = sysmalloc(sizeof(struct mbuf) + MH_DMA_PAD + MCLBYTES + MH_ALIGN);
 	if (m == NULL) {
 		return NULL;
 	}
@@ -38,8 +45,9 @@ struct mbuf *m_get_impl(int wait, int type, int pkthdr) {
 
 	m->m_type = type;
 	m->m_flags = (pkthdr ? M_PKTHDR : 0) | M_EXT; /* cluster always owned */
-	m->m_cluster = (char *) (m + 1);
-	m->m_cluster_size = MCLBYTES;
+	cl = ((uintptr_t) (m + 1) + 255) & ~(uintptr_t) 255;
+	m->m_cluster = (char *) cl;
+	m->m_cluster_size = MCLBYTES + MH_ALIGN;
 	m->m_data = m->m_cluster + (pkthdr ? MH_ALIGN : 0);
 	m->m_len = 0;
 	if (pkthdr) {

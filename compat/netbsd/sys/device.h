@@ -73,4 +73,20 @@ static inline void pmf_device_deregister(device_t dev) {
 	(void) dev;
 }
 
+static inline bool pmf_class_network_register(device_t dev, void *ifp) {
+	(void) dev;
+	(void) ifp;
+	return true;
+}
+
+/* deferred configuration is unnecessary here: the firmware blobs are
+ * embedded, so the mountroot hook runs synchronously */
+static inline void config_mountroot(device_t dev,
+	void (*hook)(device_t)) {
+	hook(dev);
+}
+
+/* the ports run without a kernel lock; the assertion always holds */
+#define KERNEL_LOCKED_P() 1
+
 #endif /* _COMPAT_SYS_DEVICE_H_ */

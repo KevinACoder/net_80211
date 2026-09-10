@@ -13,13 +13,13 @@
 typedef void (*callout_fn_t)(void *);
 
 /* embedded by driver softc; storage owned by the port */
-struct host_callout {
+struct callout {
 	void *hc_timer;
 	callout_fn_t hc_fn;
 	void *hc_arg;
 	int hc_pending;
 };
-typedef struct host_callout callout_t;
+typedef struct callout callout_t;
 
 #define CALLOUT_MPSAFE 0
 #define CALLOUT_STOPPING 1

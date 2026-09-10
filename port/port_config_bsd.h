@@ -49,11 +49,32 @@
 #endif
 
 /* the embox <sys/sysctl.h> is an empty stub; provide the NetBSD
- * sysctl vocabulary so the glue compiles out cleanly */
+ * sysctl vocabulary so the glue compiles out cleanly. The whole tree
+ * still compiles out: sysctl_createv always fails and callers take
+ * their error paths. */
 struct sysctllog { int unused; };
 typedef struct sysctllog sysctllog;
+struct sysctlnode {
+	unsigned sysctl_num;
+	void *sysctl_data;
+};
 #define SYSCTL_SETUP(name, desc) static void name(void)
-#define sysctl_createv(...)
+#define SYSCTL_DESCR(desc) (desc)
+#define SYSCTLFN_PROTO struct sysctlnode *rnode, void *newp
+#define SYSCTLFN_ARGS SYSCTLFN_PROTO
+#define SYSCTLFN_CALL(nodep) (nodep), NULL
+#define CTL_EOL 0
+#define CTL_CREATE 0
+#define CTLFLAG_READWRITE 0
+#define CTLFLAG_PERMANENT 0
+#define CTLTYPE_INT 0
+#define CTLTYPE_NODE 0
+#define sysctl_createv(...) (-1)
+static inline int sysctl_lookup(struct sysctlnode *node, void *newp) {
+	(void) node;
+	(void) newp;
+	return 0;
+}
 
 /* the net80211 sysctl configuration tree is compiled out */
 #define IEEE80211_PORT_NO_SYSCTL 1
@@ -73,5 +94,6 @@ typedef struct sysctllog sysctllog;
 #endif
 
 void panic(const char *fmt, ...) __attribute__((__format__(__printf__,1,2)));
+
 
 #endif /* _NET80211_PORT_CONFIG_BSD_H_ */
