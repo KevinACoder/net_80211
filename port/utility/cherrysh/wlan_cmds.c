@@ -35,7 +35,8 @@ static void wlan_help(void) {
 	    "wlan dump        - print the scan table\r\n"
 	    "wlan status      - adapter and net80211 state\r\n"
 	    "wlan up          - firmware load + interface init\r\n"
-	    "wlan join <ssid> - set the desired SSID and rejoin (open)\r\n");
+	    "wlan join <ssid> - set the desired SSID and rejoin (open)\r\n"
+	    "wlan select <ad> - drive urtwn (usb) or iwm (pcie)\r\n");
 }
 
 static int cmd_wlan(int argc, char **argv) {
@@ -48,6 +49,18 @@ static int cmd_wlan(int argc, char **argv) {
 
 	if (strcmp(argv[1], "status") == 0) {
 		wlan_port_status_dump();
+		return 0;
+	}
+	if (strcmp(argv[1], "select") == 0) {
+		if (argc < 3) {
+			console_printf( "wlan: usage: wlan select <urtwn|iwm>\r\n");
+			return 1;
+		}
+		if (wlan_port_select(argv[2]) != 0) {
+			console_printf( "wlan: no adapter named %s\r\n", argv[2]);
+			return 1;
+		}
+		console_printf( "wlan: driving %s\r\n", argv[2]);
 		return 0;
 	}
 	if (strcmp(argv[1], "dump") == 0) {
@@ -105,7 +118,28 @@ static int cmd_wlan(int argc, char **argv) {
 		wlan_port_serializer_unlock();
 
 		console_printf( "wlan: joining \"%s\"...\r\n", ssid);
+		/* S_SCAN -> S_SCAN only probes the current channel (and
+		 * cancels a running scan); route through INIT so the
+		 * com state machine runs ieee80211_begin_scan */
+		ieee80211_new_state(ic, IEEE80211_S_INIT, -1);
 		ieee80211_new_state(ic, IEEE80211_S_SCAN, -1);
+		return 0;
+	}
+
+	if (strcmp(argv[1], "debug") == 0) {
+		struct ieee80211com *ic = wlan_port_get_ic();
+
+		if (ic == NULL) {
+			console_printf( "wlan: no adapter attached\r\n");
+			return 1;
+		}
+		/* SCAN|STATE|AUTH|ASSOC tell the join story; OUTPUT|INPUT|
+		 * DEBUG|DUMPPKTS print every managed/data frame */
+		ic->ic_debug ^= IEEE80211_MSG_SCAN | IEEE80211_MSG_STATE |
+		    IEEE80211_MSG_AUTH | IEEE80211_MSG_ASSOC |
+		    IEEE80211_MSG_OUTPUT | IEEE80211_MSG_INPUT |
+		    IEEE80211_MSG_DEBUG | IEEE80211_MSG_DUMPPKTS;
+		console_printf( "wlan: ic_debug=%#x\r\n", ic->ic_debug);
 		return 0;
 	}
 

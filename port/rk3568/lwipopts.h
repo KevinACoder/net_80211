@@ -16,6 +16,7 @@
 #define NO_SYS 0
 #define LWIP_SOCKET 1
 #define LWIP_NETCONN 1
+#define LWIP_NETIF_API 1
 #define LWIP_TCPIP_CORE_LOCKING 1
 #define LWIP_ERRNO_STDINCLUDE 1
 #define LWIP_TIMEVAL_PRIVATE 0
@@ -38,6 +39,8 @@
 #define LWIP_ICMP 1
 #define LWIP_IGMP 0
 #define LWIP_DNS 0
+#define LWIP_RAW 1
+#define MEMP_NUM_RAW_PCB 4
 #define LWIP_IPV4 1
 #define LWIP_IPV6 0
 #define LWIP_TCP 1

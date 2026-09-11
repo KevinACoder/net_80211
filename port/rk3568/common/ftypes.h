@@ -49,7 +49,7 @@ extern "C"
 #define FT_COMPONENT_IS_STARTED 0x22222222U
 
 typedef uint8_t u8;            /* unsigned 8-bit */
-typedef char s8;               /* signed 8-bit */
+typedef signed char s8;        /* signed 8-bit (aarch64 char is unsigned) */
 typedef uint16_t u16;          /* unsigned 16-bit */
 typedef short s16;             /* signed 16-bit */
 typedef uint32_t u32;          /* unsigned 32-bit */
