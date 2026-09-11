@@ -28,6 +28,7 @@ BUSUSB  := $(TOPDIR)/bus/usb/cherryusb
 CSBUS   := $(BUSUSB)/cherryusb
 NETR    := $(REPODIR)
 COMPAT  := $(NETR)/compat/netbsd
+WPAR    := $(abspath $(TOPDIR)/../../wpa_supplicant-rtos)
 
 BUILD   := $(TOPDIR)/build
 PROJECT := net80211
@@ -67,6 +68,7 @@ INCLUDES += -I$(BOARD)/soc/rk3568
 INCLUDES += -I$(BOARD)/soc/common
 INCLUDES += -I$(BOARD)/drivers/com
 INCLUDES += -I$(BOARD)/drivers/gicv3
+INCLUDES += -I$(BOARD)/drivers/pcie
 INCLUDES += -I$(CSHDIR)
 INCLUDES += -I$(CSHCORE)
 INCLUDES += -I$(BUSUSB)
@@ -80,8 +82,18 @@ INCLUDES += -I$(LWIPDIR)/contrib/ports/freertos/include
 INC_NET  := -I$(NETR) -I$(TOPDIR)/osal/freertos/compat -idirafter $(COMPAT)
 NEWLIB_INC := $(shell $(CC) -print-sysroot)/include
 STDARG_INC := $(shell $(CC) -print-file-name=stdarg.h)
-CFG_BSD  := -D_KERNEL -D_COMPAT_SYS_SYSCTL_H_ -include $(STDARG_INC) -include $(NETR)/port/port_config_bsd.h
+CFG_BSD  := -D_KERNEL -DIWM_DEBUG -D_COMPAT_SYS_SYSCTL_H_ -include $(STDARG_INC) -include $(NETR)/port/port_config_bsd.h
 CFG_HOST := -D_KERNEL -include $(STDARG_INC) -include $(NETR)/port/port_config.h
+# wpa_supplicant port: the vanilla tree (path-referenced) plus the
+# FreeRTOS glue under port/wpa; CONFIG_OS_EMBOX in the config header
+# steers the vanilla includes.h to the plain-libc branch. newlib has
+# no net/* headers and the compat shadow drags the BSD malloc macros
+# with it, so the core group gets minimal shims instead (shim/ first
+# in the search order of the wpa rule only).
+INC_WPA  := -I$(WPAR) -I$(WPAR)/src -I$(WPAR)/src/utils -I$(WPAR)/src/drivers
+INC_WPA  += -I$(WPAR)/src/l2_packet -I$(WPAR)/wpa_supplicant
+INC_WPA  += -I$(TOPDIR)/wpa
+CFG_WPA  := -w -include $(TOPDIR)/wpa/wpa_port_config.h
 
 # --- sources ---------------------------------------------------------
 
@@ -103,6 +115,7 @@ SRCS_C  += fcpu_info.c fspin.c
 SRCS_C  += fprintk.c fprintf.c fassert.c fdebug.c fsleep.c
 SRCS_C  += fbitmap.c ftrace_printk.c
 SRCS_C  += com.c com_console.c
+SRCS_C  += pcie_dw.c
 
 # application + console
 SRCS_C  += main.c syscalls.c
@@ -121,7 +134,8 @@ SRCS_C   += usbh_core.c usbh_hub.c usb_hc_ehci.c usb_osal_freertos.c
 #SRCS_C   += usbdi_compat.c usbh_urtwn_class.c
 #SRCS_C   += net_bridge_freertos.c
 
-# CherryUSB EHCI/USBH host stack
+# CherryUSB EHCI/USBH host stack; the PCIe DWC core lives in the
+# board driver tree (pcie_dw.c)
 
 # net80211 BSD-world: stack, AES-CCMP, urtwn (forced port_config_bsd.h)
 SRCS_BSD := ieee80211.c ieee80211_proto.c ieee80211_node.c ieee80211_output.c
@@ -135,18 +149,39 @@ SRCS_BSD += urtwn_reg.c iwm_reg.c wlan_cmds.c
 SRCS_HOST := osal_freertos.c port_core.c firmware_embed.c
 SRCS_HOST += usb_glue_rk3568_freertos.c net_bridge_freertos.c
 SRCS_HOST += usbdi_compat.c usbh_urtwn_class.c
+SRCS_HOST += pcie_freertos.c
 SRCS_HOST += bsd_mbuf.c bsd_ifnet.c lwip_netif.c
+
+# wpa_supplicant: PSK-only core file set from the vanilla tree (same
+# list as the embox extbld Mybuild) + the FreeRTOS port glue; the
+# driver wrapper and l2_packet live in both worlds and take CFG_BSD
+SRCS_WPA := wpa_common.c ieee802_11_common.c hw_features_common.c
+SRCS_WPA += driver_common.c drivers.c
+SRCS_WPA += wpa.c wpa_ie.c pmksa_cache.c preauth.c
+SRCS_WPA += common.c wpabuf.c base64.c bitfield.c wpa_debug.c
+SRCS_WPA += crypto_internal.c aes-internal.c aes-internal-dec.c
+SRCS_WPA += aes-internal-enc.c aes-wrap.c aes-unwrap.c aes-omac1.c
+SRCS_WPA += sha1.c sha1-internal.c sha1-prf.c sha1-pbkdf2.c
+SRCS_WPA += md5.c md5-internal.c rc4.c
+SRCS_WPA += sha256.c sha256-internal.c sha256-prf.c tls_none.c
+SRCS_WPA += wpa_supplicant.c events.c scan.c bss.c config.c config_none.c
+SRCS_WPA += notify.c wpas_glue.c bssid_ignore.c eap_register.c
+SRCS_WPA += op_classes.c rrm.c robust_av.c
+SRCS_WPA += eloop_port.c os_port.c supp_main_freertos.c wpa_cmd.c
+SRCS_WPABSD := driver_net80211.c l2_packet_freertos.c
 
 OBJS      := $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(notdir $(SRCS_C) $(SRCS_S)))))
 OBJS_BSD  := $(addprefix $(BUILD)/bsd/,$(addsuffix .o,$(basename $(notdir $(SRCS_BSD)))))
 OBJS_HOST := $(addprefix $(BUILD)/host/,$(addsuffix .o,$(basename $(notdir $(SRCS_HOST)))))
+OBJS_WPA  := $(addprefix $(BUILD)/wpa/,$(addsuffix .o,$(basename $(notdir $(SRCS_WPA)))))
+OBJS_WPABSD := $(addprefix $(BUILD)/wpabsd/,$(addsuffix .o,$(basename $(notdir $(SRCS_WPABSD)))))
 
 vpath %.c $(FTDIR) $(FTDIR)/portable/MemMang $(FTDIR)/portable
 vpath %.c $(FTDIR)/portable/GCC/platform/aarch64
 vpath %.c $(BOARD) $(BOARD)/common $(BOARD)/arch/armv8/aarch64
 vpath %.c $(BOARD)/arch/armv8/aarch64/gcc $(BOARD)/arch/armv8/gcc
 vpath %.c $(BOARD)/arch/armv8/common $(BOARD)/soc/rk3568 $(BOARD)/soc/common
-vpath %.c $(BOARD)/drivers/com $(BOARD)/drivers/gicv3 $(TOPDIR)
+vpath %.c $(BOARD)/drivers/com $(BOARD)/drivers/gicv3 $(BOARD)/drivers/pcie $(TOPDIR)
 vpath %.c $(NETR)/driver/iwm $(NETR)/port/bus/pcie/freertos
 vpath %.c $(CSHDIR) $(CSHCORE) $(CSHCORE)/cherryrl
 vpath %.c $(LWIPDIRS)
@@ -157,6 +192,13 @@ vpath %.c $(NETR)/net80211 $(NETR)/crypto/aes $(NETR)/driver/urtwn
 vpath %.c $(NETR)/port/osal/freertos $(NETR)/port/osal/embox
 vpath %.c $(NETR)/port/net/embox $(NETR)/port/net/lwip
 
+# wpa_supplicant/ first: src/utils also has a config.c and the
+# wpa_supplicant one is the file this build needs
+vpath %.c $(WPAR)/wpa_supplicant
+vpath %.c $(WPAR)/src/common $(WPAR)/src/drivers $(WPAR)/src/rsn_supp
+vpath %.c $(WPAR)/src/utils $(WPAR)/src/crypto
+vpath %.c $(TOPDIR)/wpa
+
 vpath %.S $(FTDIR)/portable/GCC/platform/aarch64
 vpath %.S $(BOARD)/arch/armv8/aarch64/gcc
 
@@ -165,7 +207,7 @@ vpath %.S $(BOARD)/arch/armv8/aarch64/gcc
 .PHONY: all clean deploy
 all: $(BUILD)/$(PROJECT).bin
 
-$(BUILD) $(BUILD)/bsd $(BUILD)/host:
+$(BUILD) $(BUILD)/bsd $(BUILD)/host $(BUILD)/wpa $(BUILD)/wpabsd:
 	mkdir -p $@
 
 $(BUILD)/%.o: %.c | $(BUILD)
@@ -180,10 +222,16 @@ $(BUILD)/bsd/%.o: %.c | $(BUILD)/bsd
 $(BUILD)/host/%.o: %.c | $(BUILD)/host
 	$(CC) $(CFLAGS) $(INCLUDES) $(INC_NET) $(CFG_HOST) -c $< -o $@
 
-$(BUILD)/$(PROJECT).elf: $(OBJS) $(OBJS_BSD) $(OBJS_HOST) $(BUILD)/linker.pp.ld
+$(BUILD)/wpa/%.o: %.c | $(BUILD)/wpa
+	$(CC) $(CFLAGS) $(INCLUDES) -I$(TOPDIR)/wpa/shim $(INC_WPA) $(CFG_WPA) -c $< -o $@
+
+$(BUILD)/wpabsd/%.o: %.c | $(BUILD)/wpabsd
+	$(CC) $(CFLAGS) $(INCLUDES) $(INC_NET) $(CFG_BSD) $(INC_WPA) $(CFG_WPA) -c $< -o $@
+
+$(BUILD)/$(PROJECT).elf: $(OBJS) $(OBJS_BSD) $(OBJS_HOST) $(OBJS_WPA) $(OBJS_WPABSD) $(BUILD)/linker.pp.ld
 	$(CC) $(CFLAGS) -nostartfiles -Wl,--gc-sections \
 	    -Wl,-Map,$(BUILD)/$(PROJECT).map \
-	    -T$(BUILD)/linker.pp.ld $(OBJS) $(OBJS_BSD) $(OBJS_HOST) -o $@
+	    -T$(BUILD)/linker.pp.ld $(OBJS) $(OBJS_BSD) $(OBJS_HOST) $(OBJS_WPA) $(OBJS_WPABSD) -o $@
 	$(SIZE) $@
 
 # ld does not preprocess scripts itself; resolve the sdkconfig includes
