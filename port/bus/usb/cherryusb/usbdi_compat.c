@@ -894,5 +894,7 @@ void wlan_usbdi_detach(struct wlan_usb_dev *port) {
 	usb_osal_sem_give(dev->ring_sem);
 	usb_osal_sem_give(dev->task_sem);
 	port->port_priv = NULL;
-	wlan_kfree(dev, M_USB);
+	/* the shim stays allocated: in-flight completions and the
+	 * driver's xfers reference it, and this harness never
+	 * re-attaches without a reboot */
 }
