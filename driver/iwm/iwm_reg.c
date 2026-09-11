@@ -47,7 +47,11 @@
 #include <port/port.h>
 #include <port/bus/pcie/port_pcie.h>
 
+#ifdef WLAN_PORT_FREERTOS
+#include <port/osal/freertos/wlan_port_freertos.h>
+#else
 #include <port/osal/embox/wlan_port_embox.h>
+#endif
 
 /* the verbatim import compiled into this unit so its static glue
  * (CFATTACH_DECL_NEW tables) stays intact */
@@ -109,10 +113,72 @@ static int iwm_reg_attach_bus(void *bus_dev, void *if_priv) {
 	pa.pa_id = ((uint32_t) pcie->device << 16) | pcie->vendor;
 
 	wlan_port_serializer_lock();
+	{
+		/* bring the load sequence's DPRINTFs up while the port
+		 * settles; the imported file keeps its own knob */
+		extern int iwm_debug;
+
+		iwm_debug = 2;
+	}
 	iwm_attach(NULL, self, &pa);
 	wlan_port_serializer_unlock();
+	{
+		/* the load-sequence verbosity served its purpose; keep
+		 * the run-time console quiet (rx probe prints are its
+		 * own always-on lines) */
+		extern int iwm_debug;
+
+		iwm_debug = 0;
+	}
 
 	if (!ISSET(sc->sc_flags, IWM_FLAG_ATTACHED)) {
+		{
+			extern volatile unsigned wlan_pcie_intr_fired;
+
+			/* card side: did the firmware DMA finish? */
+			uint32_t buf_sts = IWM_READ(sc,
+			    IWM_FH_TCSR_CHNL_TX_BUF_STS_REG(
+				IWM_FH_SRVC_CHNL));
+			uint32_t cfg = IWM_READ(sc,
+			    IWM_FH_TCSR_CHNL_TX_CONFIG_REG(
+				IWM_FH_SRVC_CHNL));
+			uint32_t tssr = IWM_READ(sc,
+			    IWM_FH_TSSR_TX_STATUS_REG);
+			int idle = !!(tssr &
+			    IWM_FH_TSSR_TX_STATUS_REG_MSK_CHNL_IDLE(
+				IWM_FH_SRVC_CHNL));
+
+			printf("iwm: fh buf_sts=%08x cfg=%08x "
+			    "tssr=%08x idle=%d\n",
+			    buf_sts, cfg, tssr, idle);
+		}
+		{
+			/* host side: ITS command queue progress and the
+			 * LPI's property/pending state */
+			volatile uint64_t *its =
+			    (volatile uint64_t *) (uintptr_t) 0xFD440000ULL;
+			volatile uint8_t *sgi =
+			    (volatile uint8_t *) (uintptr_t) 0xFD420000ULL;
+			uint64_t cw = its[0x88 / 8];
+			uint64_t cr = its[0x90 / 8];
+			extern volatile unsigned wlan_pcie_intr_fired;
+
+			printf("iwm: its cw=%llu cr=%llu\n",
+			    (unsigned long long) cw,
+			    (unsigned long long) cr);
+			u8 lpi_prop = 0xff, lpi_pend = 0xff;
+
+			{
+				extern void intr_dump_lpi(uint32_t, u8 *,
+				    u8 *);
+
+				intr_dump_lpi(8192, &lpi_prop,
+				    &lpi_pend);
+			}
+			printf("iwm: lpi 8192 enable=%02x pend=%02x "
+			    "intr_fired=%u\n",
+			    lpi_prop, lpi_pend, wlan_pcie_intr_fired);
+		}
 		return -EIO;
 	}
 	/* remember the first healthy unit for the shell hooks */
@@ -178,10 +244,11 @@ static void iwm_reg_print_node_cb(void *arg, struct ieee80211_node *ni) {
 	(void) arg;
 	struct ieee80211_channel *ch = ni->ni_chan;
 
-	printf("  %02x:%02x:%02x:%02x:%02x:%02x  ch=%d  rssi=%u  ssid=%.*s\n",
+	printf("  %02x:%02x:%02x:%02x:%02x:%02x  ch=%d  rssi=%u  %s  ssid=%.*s\n",
 	    ni->ni_bssid[0], ni->ni_bssid[1], ni->ni_bssid[2],
 	    ni->ni_bssid[3], ni->ni_bssid[4], ni->ni_bssid[5],
 	    ch != NULL ? ch->ic_freq : 0, ni->ni_rssi,
+	    (ni->ni_capinfo & IEEE80211_CAPINFO_PRIVACY) ? "enc " : "open",
 	    ni->ni_esslen, ni->ni_essid);
 }
 

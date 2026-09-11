@@ -586,6 +586,18 @@ ieee80211_input(struct ieee80211com *ic, struct mbuf *m,
 			 */
 			if (!IEEE80211_IS_MULTICAST(wh->i_addr1) &&
 			    !IEEE80211_ADDR_EQ(wh->i_addr1, ic->ic_myaddr)) {
+				/* the %6D printf extension is not portable;
+				 * print the addresses explicitly */
+				if (ieee80211_msg(ic, IEEE80211_MSG_INPUT)) {
+					printf("rx drop addr1=%02x:%02x:%02x:%02x:%02x:%02x "
+					    "myaddr=%02x:%02x:%02x:%02x:%02x:%02x\n",
+					    wh->i_addr1[0], wh->i_addr1[1],
+					    wh->i_addr1[2], wh->i_addr1[3],
+					    wh->i_addr1[4], wh->i_addr1[5],
+					    ic->ic_myaddr[0], ic->ic_myaddr[1],
+					    ic->ic_myaddr[2], ic->ic_myaddr[3],
+					    ic->ic_myaddr[4], ic->ic_myaddr[5]);
+				}
 				IEEE80211_DISCARD_MAC(ic, IEEE80211_MSG_INPUT,
 				    bssid, NULL, "not to cur sta: lladdr=%6D, addr1=%6D",
 				    ic->ic_myaddr, ":", wh->i_addr1, ":");

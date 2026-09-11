@@ -18,7 +18,11 @@
 
 #include <port/port.h>
 #include <port/bus/usb/port_usb.h>
+#ifdef WLAN_PORT_FREERTOS
+#include <port/osal/freertos/wlan_port_freertos.h>
+#else
 #include <port/osal/embox/wlan_port_embox.h>
+#endif
 #include "wlan_port_cherryusb.h"
 
 extern const struct wlan_chip_driver *const wlan_chip_drivers[];
@@ -92,7 +96,7 @@ static int usbh_wlan_connect(struct usbh_hubport *hport, uint8_t intf) {
 	}
 
 	wlan_port_ifs[wlan_port_if_n++] = pif;
-	intf_desc->priv = hport; /* keep the class_driver mount */
+	intf_desc->priv = pif; /* the instance the disconnect hook recovers */
 
 	printf("wlan: %s found at bus %u addr %u (hub %u port %u)\n",
 	    drv->name, hport->bus->busid, hport->dev_addr,
@@ -104,7 +108,6 @@ static int usbh_wlan_connect(struct usbh_hubport *hport, uint8_t intf) {
 static int usbh_wlan_disconnect(struct usbh_hubport *hport, uint8_t intf) {
 	struct usbh_interface *intf_desc;
 	struct wlan_port_iface *pif;
-	int i;
 
 	(void) intf;
 	intf_desc = &hport->config.intf[intf];
@@ -114,14 +117,11 @@ static int usbh_wlan_disconnect(struct usbh_hubport *hport, uint8_t intf) {
 	}
 	intf_desc->priv = NULL;
 
+	/* hot-unplug teardown is out of scope for this harness: the rx/tx
+	 * workers are stopped but the claim (and the net80211 state
+	 * behind it) is kept; a reboot recovers. */
 	wlan_usbdi_detach(&pif->usb);
-	for (i = 0; i < WLAN_PORT_MAX_IF; i++) {
-		if (wlan_port_ifs[i] == pif) {
-			wlan_port_ifs[i] = NULL;
-		}
-	}
-	free(pif);
-	printf("wlan: adapter removed\n");
+	printf("wlan: adapter removed (claim retained; reboot to recover)\n");
 	return 0;
 }
 
