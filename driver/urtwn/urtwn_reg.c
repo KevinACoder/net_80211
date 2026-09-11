@@ -119,10 +119,11 @@ static void wlan_print_node_cb(void *arg, struct ieee80211_node *ni) {
 	(void) arg;
 	struct ieee80211_channel *ch = ni->ni_chan;
 
-	printf("  %02x:%02x:%02x:%02x:%02x:%02x  ch=%d  rssi=%u  ssid=%.*s\n",
+	printf("  %02x:%02x:%02x:%02x:%02x:%02x  ch=%d  rssi=%u  %s  ssid=%.*s\n",
 	    ni->ni_bssid[0], ni->ni_bssid[1], ni->ni_bssid[2],
 	    ni->ni_bssid[3], ni->ni_bssid[4], ni->ni_bssid[5],
 	    ch != NULL ? ch->ic_freq : 0, ni->ni_rssi,
+	    (ni->ni_capinfo & IEEE80211_CAPINFO_PRIVACY) ? "enc " : "open",
 	    ni->ni_esslen, ni->ni_essid);
 }
 
