@@ -33,7 +33,7 @@
 #include "fprintk.h"
 #include "fkernel.h"
 #include "faarch.h"
-#include "finterrupt.h"
+#include "intr.h"
 #include "sdkconfig.h"
 #include "fexception.h"
 #include "funwind.h"

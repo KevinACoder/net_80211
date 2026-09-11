@@ -31,7 +31,7 @@
 #include "fprintk.h"
 #include "sdkconfig.h"
 #include "fparameters.h"
-#include "fearly_uart.h"
+#include "console.h"
 
 
 void SyncDoubleIn(void)

@@ -3380,6 +3380,25 @@ iwm_firmware_load_chunk(struct iwm_softc *sc, uint32_t dst_addr,
 	if (!sc->sc_fw_chunk_done) {
 		DPRINTF(("%s: fw chunk addr 0x%x len %d failed to load\n",
 		    DEVNAME(sc), dst_addr, byte_cnt));
+		/* card-side probe while the device is still up: did the
+		 * DMA engine finish the chunk? (TB_STS 3 == valid) */
+		printf("iwm: fw chunk timeout: csr_int=%08x int_mask=%08x\n",
+		    IWM_READ(sc, IWM_CSR_INT),
+		    IWM_READ(sc, IWM_CSR_INT_MASK));
+		printf("iwm: fw chunk timeout: buf_sts=%08x cfg=%08x\n",
+		    IWM_READ(sc, IWM_FH_TCSR_CHNL_TX_BUF_STS_REG(
+			IWM_FH_SRVC_CHNL)),
+		    IWM_READ(sc, IWM_FH_TCSR_CHNL_TX_CONFIG_REG(
+			IWM_FH_SRVC_CHNL)));
+		{
+			/* root-port view taken while the card is still up:
+			 * bits 0..3 mirror INTA~INTD at the DWC client, bit
+			 * 4 = the endpoint's PCI_STATUS.INTERRUPT */
+			extern unsigned wlan_pcie_intx_status(void);
+
+			printf("iwm: fw chunk timeout: intx status=%x\n",
+			    wlan_pcie_intx_status());
+		}
 	}
 
 	return err;
@@ -3947,6 +3966,7 @@ iwm_rx_rx_mpdu(struct iwm_softc *sc, struct iwm_rx_packet *pkt,
 		DPRINTF(("Bad CRC or FIFO: 0x%08X.\n", rx_pkt_status));
 		return; /* drop */
 	}
+
 
 	device_timestamp = le32toh(phy_info->system_timestamp);
 

@@ -17,21 +17,20 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "f16550.h"
+#include "console.h"
 #include "csh.h"
 #include "csh_console.h"
 
 #define CONSOLE_TASK_PRIORITY 3
 #define CONSOLE_TASK_STACK 2048
 
-static F16550 console_uart;
 static chry_shell_t csh;
 
 static uint16_t csh_sput_cb(chry_readline_t *rl, const void *data, uint16_t size)
 {
 	(void)rl;
 
-	F16550BlockSend(&console_uart, (u8 *)(uintptr_t)data, size);
+	com_console_write(data, size);
 
 	return size;
 }
@@ -41,7 +40,7 @@ static uint16_t csh_sget_cb(chry_readline_t *rl, void *data, uint16_t size)
 	(void)rl;
 
 	for (;;) {
-		u32 n = F16550Receive(&console_uart, (u8 *)data, 1);
+		size_t n = com_console_read(data, 1);
 
 		if (n > 0) {
 			return (uint16_t)n;
@@ -82,7 +81,7 @@ int console_printf(const char *fmt, ...)
 		n = sizeof(buf);
 	}
 	if (n > 0) {
-		F16550BlockSend(&console_uart, (u8 *) buf, (u32) n);
+		com_console_write(buf, (size_t) n);
 	}
 	return n;
 }
@@ -110,21 +109,11 @@ int console_start(void)
 	static char history_buffer[128];
 	static char line_buffer[256];
 	chry_shell_init_t init;
-	const F16550Config *config_p;
-	F16550Config config_value;
 	int ret;
 
-	config_p = F16550LookupConfig(FUART2_ID);
-	if (config_p == NULL) {
+	if (com_console_init() != 0) {
 		return -1;
 	}
-	memcpy(&config_value, config_p, sizeof(F16550Config));
-	ret = F16550CfgInitialize(&console_uart, &config_value);
-	if (ret != FT_SUCCESS) {
-		return -1;
-	}
-	F16550SetOptions(&console_uart, F16550_OPTION_UARTEN |
-	    F16550_OPTION_RXEN | F16550_OPTION_TXEN | F16550_OPTION_FIFOEN);
 
 	memset(&init, 0, sizeof(init));
 	init.sput = csh_sput_cb;

@@ -35,7 +35,7 @@
 #include "ftypes.h"
 #include "fparameters.h"
 #include "fgeneric_timer.h"
-#include "finterrupt.h"
+#include "intr.h"
 #include "fcpu_info.h"
 #include "fassert.h"
 #include "fexception.h"

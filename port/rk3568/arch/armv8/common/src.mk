@@ -4,16 +4,12 @@ ARCH_CSRCS += common/fcpp_setup.c common/fpsci.c common/fpmu_perf.c common/fboot
 
 ifeq ($(CONFIG_SOC_NAME),"rk3568")
 # rk3568 (GIC-600, OP-TEE 引导): 使用 rk 专用 GIC/ITS 实现, 排除共享版。
-ARCH_CSRCS += common/fgic_v3_rk.c
 else
-ARCH_CSRCS += common/fgic_v3.c
 endif
 
 ifeq ($(CONFIG_ENABLE_GIC_ITS),y)
 ifeq ($(CONFIG_SOC_NAME),"rk3568")
-ARCH_CSRCS += common/fgic_its_rk.c
 else
-ARCH_CSRCS += common/fgic_its.c
 endif
 endif
 

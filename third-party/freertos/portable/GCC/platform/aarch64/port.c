@@ -34,8 +34,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "ftypes.h"
-#include "finterrupt.h"
-#include "fgic_v3.h"
+#include "intr.h"
 
 #ifndef configINTERRUPT_CONTROLLER_BASE_ADDRESS
     #error "configINTERRUPT_CONTROLLER_BASE_ADDRESS must be defined. See www.FreeRTOS.org/Using-FreeRTOS-on-Cortex-A-Embedded-Processors.html"
@@ -357,9 +356,9 @@ BaseType_t xPortStartScheduler(void)
         /* Only continue if the binary point value is set to its lowest possible
          * setting.  See the comments in vPortValidateInterruptPriority() below for
          * more information. */
-        configASSERT((FGicGetICC_BPR1() & portBINARY_POINT_BITS) <= portMAX_BINARY_POINT_VALUE);
+        configASSERT((intr_icc_bpr1_read() & portBINARY_POINT_BITS) <= portMAX_BINARY_POINT_VALUE);
 
-        if ((FGicGetICC_BPR1() & portBINARY_POINT_BITS) <= portMAX_BINARY_POINT_VALUE)
+        if ((intr_icc_bpr1_read() & portBINARY_POINT_BITS) <= portMAX_BINARY_POINT_VALUE)
         {
             /* Interrupts are turned off in the CPU itself to ensure a tick does
              * not execute while the scheduler is being started.  Interrupts are
@@ -544,7 +543,7 @@ UBaseType_t uxPortSetInterruptMask( void )
          * The priority grouping is configured by the GIC's binary point register
          * (ICCBPR).  Writting 0 to ICCBPR will ensure it is set to its lowest
          * possible value (which may be above 0). */
-    configASSERT((FGicGetICC_BPR1() & portBINARY_POINT_BITS) <= portMAX_BINARY_POINT_VALUE);
+    configASSERT((intr_icc_bpr1_read() & portBINARY_POINT_BITS) <= portMAX_BINARY_POINT_VALUE);
 }
 
 #endif /* configASSERT_DEFINED */

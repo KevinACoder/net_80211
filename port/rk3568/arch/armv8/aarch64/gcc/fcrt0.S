@@ -178,7 +178,7 @@ crt_entry:
 #endif
     mov	 sp,x2
 
-    bl FEarlyUartProbe        /* init early uart */
+    bl com_console_early_init  /* init the polled uart console */
 	bl InterruptEarlyInit
     bl FPsciInit
 #ifdef CONFIG_ENABLE_FREBOOT

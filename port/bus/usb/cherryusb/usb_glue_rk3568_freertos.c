@@ -33,7 +33,7 @@
 
 #include "ftypes.h"
 #include "fcache.h"
-#include "finterrupt.h"
+#include "intr.h"
 
 #include <usbh_core.h>
 #include <usb_osal.h>

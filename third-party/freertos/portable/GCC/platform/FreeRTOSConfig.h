@@ -31,7 +31,7 @@
 #include "sdkconfig.h"
 #if !defined(__ASSEMBLER__)
     #include "fparameters.h"
-    #include "finterrupt.h"
+    #include "intr.h"
 #endif
 
 /*-----------------------------------------------------------
