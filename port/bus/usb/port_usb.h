@@ -18,11 +18,13 @@
 
 #include <stdint.h>
 
+/* The USB 2.0 speed encoding the topology reports (and the one NetBSD's
+ * USB_SPEED_* uses for low/full/high), not an enumeration of its own. */
 enum wlan_usb_speed {
-	WLAN_USB_SPEED_LOW,
-	WLAN_USB_SPEED_FULL,
-	WLAN_USB_SPEED_HIGH,
-	WLAN_USB_SPEED_SUPER,
+	WLAN_USB_SPEED_LOW = 1,
+	WLAN_USB_SPEED_FULL = 2,
+	WLAN_USB_SPEED_HIGH = 3,
+	WLAN_USB_SPEED_SUPER = 5,
 };
 
 /* A claimed USB device. The port adapter keeps the endpoint handles

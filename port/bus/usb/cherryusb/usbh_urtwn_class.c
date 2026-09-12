@@ -27,6 +27,44 @@
 
 extern const struct wlan_chip_driver *const wlan_chip_drivers[];
 
+/*
+ * VID/PID pairs CherryUSB matches on, built from the driver registry by
+ * usbh_wlan_class_init() before the host stack starts enumerating.  The
+ * class hook is the only place a device becomes a chip driver, so this
+ * is what keeps a new driver from having to touch the port: it declares
+ * its ids in its own registry entry.
+ */
+#define WLAN_ID_TABLE_MAX 16
+static uint16_t wlan_id_table[WLAN_ID_TABLE_MAX][2];
+
+void usbh_wlan_class_init(void) {
+	const struct wlan_chip_driver *drv;
+	const struct wlan_usb_id *id;
+	unsigned int n = 0;
+	int i;
+
+	for (i = 0; wlan_chip_drivers[i] != NULL && n + 1 < WLAN_ID_TABLE_MAX;
+		i++) {
+		drv = wlan_chip_drivers[i];
+		if (drv->bus != WLAN_BUS_USB || drv->usb_ids == NULL) {
+			continue;
+		}
+		/* the registry tables are terminated by vid == 0 */
+		for (id = drv->usb_ids; id->vid != 0; id++) {
+			if (n + 1 >= WLAN_ID_TABLE_MAX) {
+				printf("wlan: id table full, %s ids truncated\n",
+				    drv->name);
+				break;
+			}
+			wlan_id_table[n][0] = id->vid;
+			wlan_id_table[n][1] = id->pid;
+			n++;
+		}
+	}
+	wlan_id_table[n][0] = 0;
+	wlan_id_table[n][1] = 0;
+}
+
 static const struct wlan_chip_driver *wlan_id_match(uint16_t vid,
 	uint16_t pid) {
 	const struct wlan_chip_driver *drv;
@@ -95,6 +133,15 @@ static int usbh_wlan_connect(struct usbh_hubport *hport, uint8_t intf) {
 		port_dev->bulk_endp_n++;
 	}
 
+	/*
+	 * The chip drivers need the bulk data function; a composite device
+	 * that carries one vendor-specific interface per function would
+	 * otherwise be claimed on whichever interface came first.
+	 */
+	if (port_dev->bulk_endp_n < 2) {
+		return -USB_ERR_INVAL;
+	}
+
 	wlan_port_ifs[wlan_port_if_n++] = pif;
 	intf_desc->priv = pif; /* the instance the disconnect hook recovers */
 
@@ -125,22 +172,20 @@ static int usbh_wlan_disconnect(struct usbh_hubport *hport, uint8_t intf) {
 	return 0;
 }
 
-static const uint16_t wlan_id_table[8][2] = {
-	/* filled from the driver registry below */
-	{ 0x0bda, 0x8179 }, /* RTL8188EU */
-	{ 0x0bda, 0x0179 }, /* RTL8188EUS */
-	{ 0, 0 },
-};
-
 static const struct usbh_class_driver wlan_class_driver = {
 	.driver_name = "wlan80211",
 	.connect = usbh_wlan_connect,
 	.disconnect = usbh_wlan_disconnect,
 };
 
+/*
+ * Only the vendor-specific interface is a WiFi function: on a composite
+ * dongle the mass-storage and Bluetooth functions sit in front of it,
+ * and they must not be claimed here.
+ */
 CLASS_INFO_DEFINE const struct usbh_class_info wlan_class_info = {
-	.match_flags = USB_CLASS_MATCH_VID_PID,
-	.bInterfaceClass = 0,
+	.match_flags = USB_CLASS_MATCH_VID_PID | USB_CLASS_MATCH_INTF_CLASS,
+	.bInterfaceClass = 0xff,
 	.bInterfaceSubClass = 0,
 	.bInterfaceProtocol = 0,
 	.bInterfaceNumber = 0,

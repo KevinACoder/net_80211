@@ -25,9 +25,11 @@
 #include "wlan_port_cherryusb.h"
 
 extern const struct wlan_chip_driver urtwn_driver;
+extern const struct wlan_chip_driver rtw88u_driver;
 
 const struct wlan_chip_driver *const wlan_chip_drivers[] = {
 	&urtwn_driver,
+	&rtw88u_driver,
 	NULL
 };
 
@@ -51,6 +53,9 @@ void wlan_port_thread_start(void *thread) {
 }
 
 static int wlan_port_init(void) {
+	/* the class hook matches on the ids of the drivers above */
+	usbh_wlan_class_init();
+
 	return usbh_initialize(WLAN_CHERRYUSB_EHCI_BUSID,
 	    WLAN_CHERRYUSB_EHCI_BASE, NULL);
 }

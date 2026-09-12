@@ -20,4 +20,8 @@ int wlan_usbdi_attach(struct wlan_usb_dev *port,
 	const struct wlan_chip_driver *drv);
 void wlan_usbdi_detach(struct wlan_usb_dev *port);
 
+/* Build the class hook's VID/PID table from the driver registry; call
+ * before the host stack starts enumerating (wlan_port_init does). */
+void usbh_wlan_class_init(void);
+
 #endif /* WLAN_PORT_CHERRYUSB_H_ */

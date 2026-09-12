@@ -75,6 +75,7 @@ struct usbd_device {
 	struct usbh_hubport *hport;
 	struct wlan_usb_dev *ud_port;
 	usb_device_descriptor_t ddesc;
+	usb_config_descriptor_t cdesc;
 	struct usbd_interface ifaces[USBD_SHIFACE_MAX];
 	volatile int dying;
 
@@ -182,6 +183,8 @@ static struct usbd_device *usbd_shim_register_device(struct usbh_hubport *hport,
 	dev->hport = hport;
 	dev->ud_port = port_dev;
 	memcpy(&dev->ddesc, &hport->device_desc, sizeof(dev->ddesc));
+	/* the two configuration descriptors have the same layout */
+	memcpy(&dev->cdesc, &hport->config.config_desc, sizeof(dev->cdesc));
 	for (i = 0; i < USBD_SHIFACE_MAX; i++) {
 		dev->ifaces[i].udev = dev;
 		dev->ifaces[i].ifno = i;
@@ -191,6 +194,14 @@ static struct usbd_device *usbd_shim_register_device(struct usbh_hubport *hport,
 
 usb_device_descriptor_t *usbd_get_device_descriptor(struct usbd_device *dev) {
 	return &dev->ddesc;
+}
+
+usb_config_descriptor_t *usbd_get_config_descriptor(struct usbd_device *dev) {
+	return &dev->cdesc;
+}
+
+uint8_t usbd_get_speed(struct usbd_device *dev) {
+	return (uint8_t) dev->ud_port->speed;
 }
 
 usb_interface_descriptor_t *usbd_get_interface_descriptor(
@@ -636,18 +647,20 @@ usbd_status usbd_delay_ms(struct usbd_device *dev, unsigned int ms) {
 
 char *usbd_devinfo_alloc(struct usbd_device *dev, int showclass) {
 	struct usbh_hubport *hport = dev->hport;
-	const char *vend;
-	const char *prod;
 	char *buf;
 
 	(void) showclass;
-	vend = (hport && hport->iManufacturer) ? hport->iManufacturer : "Realtek";
-	prod = (hport && hport->iProduct) ? hport->iProduct : "RTL8188EU";
 	buf = wlan_kmalloc(128, M_WAITOK, M_USB);
 	if (buf == NULL) {
 		return NULL;
 	}
-	snprintf(buf, 128, "%s %s, addr %d", vend, prod,
+	/* These dongles carry no readable product string, and naming one
+	 * after the first driver that needed this looked like a different
+	 * chip had attached: identify the device by its ids instead, the
+	 * chip drivers announce their own names. */
+	snprintf(buf, 128, "%04x:%04x, addr %d",
+	    hport ? (unsigned) hport->device_desc.idVendor : 0,
+	    hport ? (unsigned) hport->device_desc.idProduct : 0,
 	    hport ? hport->dev_addr : 0);
 	return buf;
 }
