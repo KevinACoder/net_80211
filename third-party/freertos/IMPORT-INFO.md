@@ -33,4 +33,4 @@ Two sources are combined in this tree:
 
 | Fix | Reason |
 | --- | --- |
-| (none yet) | |
+| `freertos_configs.c`: rename `finterrupt` to `intr_instance` | the tree does not carry the SDK object of that name (`common/finterrupt.c` is excluded); keep the local controller instance distinct from the file it used to mirror |

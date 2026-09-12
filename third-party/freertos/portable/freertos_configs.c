@@ -164,11 +164,11 @@ int vApplicationInIrq(void)
     return is_in_irq;
 }
 
-static InterruptDrvType finterrupt;
+static InterruptDrvType intr_instance;
 
 void vApplicationInitIrq(void)
 {
-    InterruptInit(&finterrupt, INTERRUPT_DRV_INTS_ID, INTERRUPT_ROLE_MASTER);
+    InterruptInit(&intr_instance, INTERRUPT_DRV_INTS_ID, INTERRUPT_ROLE_MASTER);
 }
 
 
