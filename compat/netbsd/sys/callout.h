@@ -32,4 +32,10 @@ int callout_halt(callout_t *c, kmutex_t *lock);
 void callout_destroy(callout_t *c);
 bool callout_pending(callout_t *c);
 
+/* NetBSD spells the arm-and-schedule pair as one macro over the setters */
+#define callout_reset(c, to, fn, arg) do {				\
+	(void) callout_setfunc((c), (fn), (arg));			\
+	(void) callout_schedule((c), (to));				\
+} while (0)
+
 #endif /* _COMPAT_SYS_CALLOUT_H_ */

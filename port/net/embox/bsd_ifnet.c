@@ -217,21 +217,39 @@ uint64_t ifmedia_baudrate(int mword) {
 	return 54000000;
 }
 
-void ether_ifattach(struct ifnet *ifp, const uint8_t *lla) {
-	struct sockaddr_dl *sdl = ifp->if_sadl;
-
+/* the NetBSD if_alloc_sadl equivalent: bind the embedded link-level
+ * sockaddr before anything reads CLLADDR() */
+static struct sockaddr_dl *if_sadl_ensure(struct ifnet *ifp) {
 #ifndef AF_LINK /* kept in sync with compat/netbsd/sys/socket.h */
 #define AF_LINK 18
 #endif
+	struct sockaddr_dl *sdl = ifp->if_sadl;
+
 	if (sdl == NULL) {
-		/* the NetBSD if_alloc_sadl equivalent: bind the embedded
-		 * link-level sockaddr before anything reads CLLADDR() */
 		sdl = &ifp->if_sadl_storage;
 		memset(sdl, 0, sizeof(*sdl));
 		sdl->sdl_len = (uint8_t) sizeof(*sdl);
 		sdl->sdl_family = AF_LINK;
 		ifp->if_sadl = sdl;
 	}
+	return sdl;
+}
+
+void if_set_sadl(struct ifnet *ifp, const void *lla, size_t len, bool factory) {
+	struct sockaddr_dl *sdl;
+
+	(void) factory; /* the address is never latched in hardware */
+	if (ifp == NULL || lla == NULL || len > sizeof(sdl->sdl_data)) {
+		return;
+	}
+	sdl = if_sadl_ensure(ifp);
+	memcpy(LLADDR(sdl), lla, len);
+	sdl->sdl_alen = (uint8_t) len;
+}
+
+void ether_ifattach(struct ifnet *ifp, const uint8_t *lla) {
+	struct sockaddr_dl *sdl = if_sadl_ensure(ifp);
+
 	if (lla != NULL) {
 		memcpy(LLADDR(sdl), lla, ETHER_ADDR_LEN);
 		sdl->sdl_alen = ETHER_ADDR_LEN;

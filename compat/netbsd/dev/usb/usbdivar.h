@@ -32,6 +32,14 @@ typedef void (*usb_taskq_fn)(struct usb_task *);
 
 usbd_status usbd_delay_ms(struct usbd_device *, unsigned int);
 
+/*
+ * Port addition: NetBSD keeps the speed in the usbd_device it hands the
+ * driver (udev->ud_speed), but the shell here is private to the shim, so
+ * the one field drivers branch on is exported as an accessor instead.
+ * The value uses the USB_SPEED_* encoding of usb.h.
+ */
+uint8_t usbd_get_speed(struct usbd_device *);
+
 int usb_add_task_init(void);
 void usb_add_task_fini(void);
 

@@ -186,6 +186,10 @@ void ether_ifattach(struct ifnet *, const uint8_t *);
 void ether_ifdetach(struct ifnet *);
 int ether_ioctl(struct ifnet *, unsigned long, void *);
 
+/* set the station address (and bind the link-level sockaddr on first
+ * use): drivers call this once the hardware address is known */
+void if_set_sadl(struct ifnet *, const void *, size_t, bool);
+
 #define LINK_STATE_UP 1
 #define LINK_STATE_DOWN 2
 #define LINK_STATE_UNKNOWN 0
