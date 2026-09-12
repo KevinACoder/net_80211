@@ -29,6 +29,10 @@
 #include "csh.h"
 #include "csh_console.h"
 
+/* usb shim trace control (bus/usb/cherryusb/usbdi_compat.c) */
+void wlan_usbdi_trace_set(unsigned level);
+void wlan_usbdi_trace_reset(void);
+
 static void wlan_help(void) {
 	console_printf(
 	    "wlan scan [secs] - bring up and scan\r\n"
@@ -36,7 +40,8 @@ static void wlan_help(void) {
 	    "wlan status      - adapter and net80211 state\r\n"
 	    "wlan up          - firmware load + interface init\r\n"
 	    "wlan join <ssid> - set the desired SSID and rejoin (open)\r\n"
-	    "wlan select <ad> - drive urtwn (usb) or iwm (pcie)\r\n");
+	    "wlan select <ad> - drive urtwn (usb) or iwm (pcie)\r\n"
+	    "wlan trace <lvl> - usb shim log: 0 quiet, 1 async, 2 control\r\n");
 }
 
 static int cmd_wlan(int argc, char **argv) {
@@ -65,6 +70,14 @@ static int cmd_wlan(int argc, char **argv) {
 	}
 	if (strcmp(argv[1], "dump") == 0) {
 		wlan_port_scan_dump();
+		return 0;
+	}
+	if (strcmp(argv[1], "trace") == 0) {
+		unsigned lvl = argc > 2 ? (unsigned) atoi(argv[2]) : 1;
+
+		wlan_usbdi_trace_reset();
+		wlan_usbdi_trace_set(lvl);
+		console_printf( "wlan: usb trace level %u\r\n", lvl);
 		return 0;
 	}
 	if (strcmp(argv[1], "up") == 0) {

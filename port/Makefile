@@ -84,6 +84,19 @@ NEWLIB_INC := $(shell $(CC) -print-sysroot)/include
 STDARG_INC := $(shell $(CC) -print-file-name=stdarg.h)
 CFG_BSD  := -D_KERNEL -DIWM_DEBUG -D_COMPAT_SYS_SYSCTL_H_ -include $(STDARG_INC) -include $(NETR)/port/port_config_bsd.h
 CFG_HOST := -D_KERNEL -include $(STDARG_INC) -include $(NETR)/port/port_config.h
+# rtw88: the Linux-API compat layer comes first (it provides linux/*.h,
+# asm/*.h and net/mac80211.h), then dist/ for the chip's bare-name
+# headers. The imported code casts away qualifiers, does void-pointer
+# arithmetic and trips the uninitialised-use analysis in a few spots;
+# CONFIG_RTW88_DEBUG compiles rtw_dbg() in. The compat shadow is pulled
+# in ahead of the NetBSD one, so the rtw88 group does not use INC_NET.
+INC_RTW  := -I$(NETR) -I$(TOPDIR)/osal/freertos/compat
+INC_RTW  += -I$(NETR)/driver/rtw88 -I$(NETR)/driver/rtw88/compat
+INC_RTW  += -I$(NETR)/driver/rtw88/dist -idirafter $(COMPAT)
+CFG_RTW  := -D_KERNEL -DCONFIG_RTW88_DEBUG -include $(STDARG_INC)
+CFG_RTW  += -include $(NETR)/port/port_config_bsd.h
+CFG_RTW  += -Wno-cast-qual -Wno-discarded-qualifiers -Wno-pointer-arith
+CFG_RTW  += -Wno-maybe-uninitialized
 # wpa_supplicant port: the vanilla tree (path-referenced) plus the
 # FreeRTOS glue under port/wpa; CONFIG_OS_EMBOX in the config header
 # steers the vanilla includes.h to the plain-libc branch. newlib has
@@ -148,7 +161,7 @@ SRCS_BSD += urtwn_reg.c iwm_reg.c wlan_cmds.c
 # host-world port code (forced port_config.h)
 SRCS_HOST := osal_freertos.c port_core.c firmware_embed.c
 SRCS_HOST += usb_glue_rk3568_freertos.c net_bridge_freertos.c
-SRCS_HOST += usbdi_compat.c usbh_urtwn_class.c
+SRCS_HOST += usbdi_compat.c usbh_urtwn_class.c usbh_modeswitch.c
 SRCS_HOST += pcie_freertos.c
 SRCS_HOST += bsd_mbuf.c bsd_ifnet.c lwip_netif.c
 
@@ -170,11 +183,23 @@ SRCS_WPA += op_classes.c rrm.c robust_av.c
 SRCS_WPA += eloop_port.c os_port.c supp_main_freertos.c wpa_cmd.c
 SRCS_WPABSD := driver_net80211.c l2_packet_freertos.c
 
+# rtw88 (RTL8821CU): the imported Linux chip logic, compiled against the
+# driver's own Linux-API compat layer under driver/rtw88/compat, plus the
+# usbdi transport, the chip/net80211 bridge and the registration unit.
+# These are BSD-world translation units like the other imported drivers,
+# but they get their own object directory: dist/ carries generic header
+# names (debug.h, main.h, mac.h) that must not leak into the other TUs.
+SRCS_RTW := rtw88_compat.c
+SRCS_RTW += main.c util.c tx.c rx.c mac.c phy.c coex.c efuse.c fw.c ps.c sec.c
+SRCS_RTW += bf.c regd.c sar.c rtw8821c.c rtw8821c_table.c debug.c
+SRCS_RTW += rtw88_usb.c rtw88_chip.c rtw88u_reg.c
+
 OBJS      := $(addprefix $(BUILD)/,$(addsuffix .o,$(basename $(notdir $(SRCS_C) $(SRCS_S)))))
 OBJS_BSD  := $(addprefix $(BUILD)/bsd/,$(addsuffix .o,$(basename $(notdir $(SRCS_BSD)))))
 OBJS_HOST := $(addprefix $(BUILD)/host/,$(addsuffix .o,$(basename $(notdir $(SRCS_HOST)))))
 OBJS_WPA  := $(addprefix $(BUILD)/wpa/,$(addsuffix .o,$(basename $(notdir $(SRCS_WPA)))))
 OBJS_WPABSD := $(addprefix $(BUILD)/wpabsd/,$(addsuffix .o,$(basename $(notdir $(SRCS_WPABSD)))))
+OBJS_RTW  := $(addprefix $(BUILD)/rtw/,$(addsuffix .o,$(basename $(notdir $(SRCS_RTW)))))
 
 vpath %.c $(FTDIR) $(FTDIR)/portable/MemMang $(FTDIR)/portable
 vpath %.c $(FTDIR)/portable/GCC/platform/aarch64
@@ -207,7 +232,7 @@ vpath %.S $(BOARD)/arch/armv8/aarch64/gcc
 .PHONY: all clean deploy
 all: $(BUILD)/$(PROJECT).bin
 
-$(BUILD) $(BUILD)/bsd $(BUILD)/host $(BUILD)/wpa $(BUILD)/wpabsd:
+$(BUILD) $(BUILD)/bsd $(BUILD)/host $(BUILD)/wpa $(BUILD)/wpabsd $(BUILD)/rtw:
 	mkdir -p $@
 
 $(BUILD)/%.o: %.c | $(BUILD)
@@ -228,10 +253,26 @@ $(BUILD)/wpa/%.o: %.c | $(BUILD)/wpa
 $(BUILD)/wpabsd/%.o: %.c | $(BUILD)/wpabsd
 	$(CC) $(CFLAGS) $(INCLUDES) $(INC_NET) $(CFG_BSD) $(INC_WPA) $(CFG_WPA) -c $< -o $@
 
-$(BUILD)/$(PROJECT).elf: $(OBJS) $(OBJS_BSD) $(OBJS_HOST) $(OBJS_WPA) $(OBJS_WPABSD) $(BUILD)/linker.pp.ld
+# the imported rtw88 code includes its chip headers by bare name and the
+# Linux API through the compat/ tree; CONFIG_RTW88_DEBUGFS/LEDS stay off.
+#
+# The rules are spelled out per source instead of going through vpath:
+# the same file name spaces hold the board's main.c, so a pattern rule
+# would pull in the wrong file for dist/main.c.
+RTW_SRCDIRS := $(NETR)/driver/rtw88 $(NETR)/driver/rtw88/compat
+RTW_SRCDIRS += $(NETR)/driver/rtw88/dist
+
+define RTW_OBJECT_RULE
+$(BUILD)/rtw/$(basename $(1)).o: $(firstword $(foreach d,$(RTW_SRCDIRS),$(wildcard $(d)/$(1)))) | $(BUILD)/rtw
+	$$(CC) $$(CFLAGS) $$(INCLUDES) $$(INC_RTW) $$(CFG_RTW) -c $$< -o $$@
+endef
+
+$(foreach s,$(SRCS_RTW),$(eval $(call RTW_OBJECT_RULE,$(s))))
+
+$(BUILD)/$(PROJECT).elf: $(OBJS) $(OBJS_BSD) $(OBJS_HOST) $(OBJS_WPA) $(OBJS_WPABSD) $(OBJS_RTW) $(BUILD)/linker.pp.ld
 	$(CC) $(CFLAGS) -nostartfiles -Wl,--gc-sections \
 	    -Wl,-Map,$(BUILD)/$(PROJECT).map \
-	    -T$(BUILD)/linker.pp.ld $(OBJS) $(OBJS_BSD) $(OBJS_HOST) $(OBJS_WPA) $(OBJS_WPABSD) -o $@
+	    -T$(BUILD)/linker.pp.ld $(OBJS) $(OBJS_BSD) $(OBJS_HOST) $(OBJS_WPA) $(OBJS_WPABSD) $(OBJS_RTW) -o $@
 	$(SIZE) $@
 
 # ld does not preprocess scripts itself; resolve the sdkconfig includes
